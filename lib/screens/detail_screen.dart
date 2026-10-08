@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
@@ -99,6 +100,21 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       _isFavorite = !_isFavorite;
     });
+  }
+
+  Future<void> _openWiki() async {
+    final slug = widget.item.name.trim().replaceAll(RegExp(r'\s+'), '_');
+    final url = Uri.parse('https://oldschool.runescape.wiki/w/$slug');
+
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the wiki page.')),
+      );
+    }
   }
 
   Future<void> _loadData() async {
@@ -815,6 +831,11 @@ class _DetailScreenState extends State<DetailScreen> {
         title: Text(widget.item.name),
         actions: <Widget>[
           IconButton(
+            onPressed: _openWiki,
+            icon: const Icon(Icons.open_in_new),
+            tooltip: 'View on wiki',
+          ),
+          IconButton(
             onPressed: _toggleFavorite,
             icon: Icon(
               _isFavorite ? Icons.star : Icons.star_border,
@@ -988,6 +1009,15 @@ class _DetailScreenState extends State<DetailScreen> {
                       ),
                     ],
                   ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              TextButton.icon(
+                onPressed: _openWiki,
+                icon: const Icon(Icons.public),
+                label: const Text('View on wiki'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.accentColor,
                 ),
               ),
               const SizedBox(height: 18),

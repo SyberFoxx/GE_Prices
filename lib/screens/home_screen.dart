@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
+import '../screens/about_screen.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
 import '../utils/ge_tax.dart';
@@ -578,7 +579,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(title: const Text('GE Prices')),
+      appBar: AppBar(
+        title: const Text('GE Prices'),
+        actions: <Widget>[
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const AboutScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'About',
+          ),
+        ],
+      ),
       body: IndexedStack(
         index: _selectedTab,
         children: currentTab,
