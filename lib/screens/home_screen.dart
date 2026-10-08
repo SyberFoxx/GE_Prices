@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
@@ -37,6 +38,28 @@ class _MarketRow {
   final double marginPct;
   final double netMargin;
   final double netMarginPct;
+}
+
+class _DailyCapRow {
+  const _DailyCapRow({
+    required this.item,
+    required this.currentHigh,
+    required this.currentLow,
+    required this.alchProfit,
+    required this.netMargin,
+    required this.dailyCap,
+    required this.alchCap,
+    required this.flipCap,
+  });
+
+  final ItemMapping item;
+  final int currentHigh;
+  final int currentLow;
+  final double alchProfit;
+  final double netMargin;
+  final double dailyCap;
+  final double alchCap;
+  final double flipCap;
 }
 
 class _HomeScreenState extends State<HomeScreen>
@@ -322,6 +345,71 @@ class _HomeScreenState extends State<HomeScreen>
     return rows;
   }
 
+  List<_DailyCapRow> _buildDailyCapRows() {
+    final rows = <_DailyCapRow>[];
+    final natureRune = _items.firstWhere(
+      (item) => item.name == 'Nature rune',
+      orElse: () => const ItemMapping(
+        id: 0,
+        name: '',
+        examine: '',
+        members: false,
+        limit: 0,
+        icon: '',
+        highAlch: 0,
+      ),
+    );
+
+    for (final item in _items) {
+      final limit = item.limit;
+      if (limit <= 0) {
+        continue;
+      }
+
+      final currentPrice = _latestPrices[item.id.toString()];
+      final currentHigh = currentPrice?.high ?? 0;
+      final currentLow = currentPrice?.low ?? 0;
+      if (currentHigh <= 0) {
+        continue;
+      }
+
+      double alchProfit = 0;
+      if (item.highAlch > 0) {
+        final natureRuneLow = _latestPrices[natureRune.id.toString()]?.low ?? 0;
+        if (natureRuneLow > 0) {
+          alchProfit = (item.highAlch - natureRuneLow - currentHigh).toDouble();
+        }
+      }
+
+      final netMargin = currentLow > 0
+          ? GeTax.netMargin(high: currentHigh, low: currentLow)
+          : 0.0;
+      final alchCap = alchProfit > 0 ? alchProfit * limit : 0.0;
+      final flipCap = netMargin > 0 ? netMargin * limit : 0.0;
+      final dailyCap = [alchCap, flipCap].fold<double>(0, (acc, value) => value > acc ? value : acc);
+
+      if (dailyCap <= 0) {
+        continue;
+      }
+
+      rows.add(
+        _DailyCapRow(
+          item: item,
+          currentHigh: currentHigh,
+          currentLow: currentLow,
+          alchProfit: alchProfit,
+          netMargin: netMargin,
+          dailyCap: dailyCap,
+          alchCap: alchCap,
+          flipCap: flipCap,
+        ),
+      );
+    }
+
+    rows.sort((a, b) => b.dailyCap.compareTo(a.dailyCap));
+    return rows.take(15).toList();
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -561,6 +649,8 @@ class _HomeScreenState extends State<HomeScreen>
         .toList()
       ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
 
+    final dailyCaps = _buildDailyCapRows();
+
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: <Widget>[
@@ -670,6 +760,84 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           );
         }),
+        _buildSectionHeaderWithTooltip(
+          'Daily caps (est.)',
+          'Max gp/day if you buy the full 4h GE limit. Estimates only.',
+        ),
+        ...dailyCaps.map((row) {
+          final formatter = NumberFormat.decimalPattern('en_US');
+          final buyLimitText = 'x${formatter.format(row.item.limit)}/4h';
+          final alchText = row.alchCap > 0
+              ? 'Alch: ${PriceFormat.price(row.alchCap.round())}/day'
+              : null;
+          final flipText = row.flipCap > 0
+              ? 'Flip: ${PriceFormat.price(row.flipCap.round())}/day'
+              : null;
+
+          return ItemTile(
+            item: row.item,
+            onTap: () {
+              final currentPrice = _latestPrices[row.item.id.toString()];
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => DetailScreen(
+                    item: row.item,
+                    currentPrice: currentPrice,
+                    allItems: _items,
+                    latestPrices: _latestPrices,
+                  ),
+                ),
+              );
+            },
+            title: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    row.item.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  buyLimitText,
+                  style: const TextStyle(
+                    color: AppTheme.secondaryTextColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Price: ${PriceFormat.full(row.currentHigh)}',
+                  style: const TextStyle(color: AppTheme.secondaryTextColor),
+                ),
+                if (alchText != null)
+                  Text(
+                    alchText,
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                if (flipText != null)
+                  Text(
+                    flipText,
+                    style: const TextStyle(
+                      color: AppTheme.accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
@@ -684,6 +852,33 @@ class _HomeScreenState extends State<HomeScreen>
           fontSize: 18,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeaderWithTooltip(String title, String tooltipMessage) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: <Widget>[
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: tooltipMessage,
+            child: const Icon(
+              Icons.info_outline,
+              size: 16,
+              color: AppTheme.secondaryTextColor,
+            ),
+          ),
+        ],
       ),
     );
   }

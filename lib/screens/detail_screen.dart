@@ -1041,6 +1041,15 @@ class _DetailScreenState extends State<DetailScreen>
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          if (widget.item.limit > 0) ...<Widget>[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Buy limit: ${NumberFormat.decimalPattern('en_US').format(widget.item.limit)}',
+                              style: const TextStyle(
+                                color: AppTheme.secondaryTextColor,
+                              ),
+                            ),
+                          ],
                           if (widget.item.examine.trim().isNotEmpty) ...<Widget>[
                             const SizedBox(height: 4),
                             Text(
