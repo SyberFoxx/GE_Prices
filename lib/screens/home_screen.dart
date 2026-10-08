@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
-import 'detail_screen.dart';
 import '../widgets/item_list_tile.dart';
+import 'detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,17 +17,38 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final OsrsApi _api = OsrsApi();
   final TextEditingController _searchController = TextEditingController();
+  static const String _favoriteKey = 'favorite_item_ids';
 
   List<ItemMapping> _items = <ItemMapping>[];
   List<ItemMapping> _filteredItems = <ItemMapping>[];
   Map<String, ItemPrice> _latestPrices = <String, ItemPrice>{};
+  Set<int> _favoriteItemIds = <int>{};
   bool _isLoading = true;
   String? _errorMessage;
+  String _selectedFilter = 'Todos';
 
   @override
   void initState() {
     super.initState();
+    _loadFavorites();
     _loadData();
+  }
+
+  Future<void> _loadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favoriteIds = prefs.getStringList(_favoriteKey) ?? <String>[];
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _favoriteItemIds = favoriteIds
+          .map(int.tryParse)
+          .whereType<int>()
+          .toSet();
+      _applyFilters();
+    });
   }
 
   Future<void> _loadData() async {
@@ -40,10 +62,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         _items = items;
-        _filteredItems = items;
         _latestPrices = latest.data;
         _isLoading = false;
         _errorMessage = null;
+        _applyFilters();
       });
     } catch (error) {
       if (!mounted) {
@@ -57,17 +79,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onSearchChanged(String value) {
-    final query = value.trim().toLowerCase();
+  void _applyFilters() {
+    final query = _searchController.text.trim().toLowerCase();
+    var results = _items;
 
+    if (_selectedFilter == 'Favoritos') {
+      results = results
+          .where((item) => _favoriteItemIds.contains(item.id))
+          .toList();
+    }
+
+    if (query.isNotEmpty) {
+      results = results
+          .where((item) => item.name.toLowerCase().contains(query))
+          .toList();
+    }
+
+    _filteredItems = results;
+  }
+
+  void _onSearchChanged(String value) {
     setState(() {
-      if (query.isEmpty) {
-        _filteredItems = _items;
-      } else {
-        _filteredItems = _items
-            .where((item) => item.name.toLowerCase().contains(query))
-            .toList();
-      }
+      _applyFilters();
     });
   }
 
@@ -99,6 +132,36 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ToggleButtons(
+              isSelected: <bool>[
+                _selectedFilter == 'Todos',
+                _selectedFilter == 'Favoritos',
+              ],
+              onPressed: (int index) {
+                setState(() {
+                  _selectedFilter = index == 0 ? 'Todos' : 'Favoritos';
+                  _applyFilters();
+                });
+              },
+              borderRadius: BorderRadius.circular(12),
+              selectedColor: Colors.black,
+              fillColor: AppTheme.accentColor,
+              color: Colors.white,
+              children: const <Widget>[
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Text('Todos'),
+                ),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Text('Favoritos'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           if (_isLoading)
             const Expanded(
               child: Center(
@@ -151,8 +214,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ItemListTile(
                     item: item,
                     price: price,
-                    onTap: () {
-                      Navigator.push(
+                    onTap: () async {
+                      final _ = await Navigator.push(
                         context,
                         MaterialPageRoute<void>(
                           builder: (_) => DetailScreen(
@@ -161,6 +224,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       );
+
+                      if (!mounted) {
+                        return;
+                      }
+
+                      await _loadFavorites();
+                      setState(() {
+                        _applyFilters();
+                      });
                     },
                   );
                 },

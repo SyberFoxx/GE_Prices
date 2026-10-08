@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
@@ -22,8 +23,12 @@ class DetailScreen extends StatefulWidget {
 
 class _DetailScreenState extends State<DetailScreen> {
   final OsrsApi _api = OsrsApi();
+  static const String _favoriteKey = 'favorite_item_ids';
+
+  late SharedPreferences _prefs;
   List<HistoricalPricePoint> _points = <HistoricalPricePoint>[];
   bool _isLoading = true;
+  bool _isFavorite = false;
   String? _errorMessage;
   String _selectedTimestep = '24h';
 
@@ -32,7 +37,50 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void initState() {
     super.initState();
+    _initFavoriteState();
     _loadData();
+  }
+
+  Future<void> _initFavoriteState() async {
+    _prefs = await SharedPreferences.getInstance();
+    final favoriteIds = _prefs.getStringList(_favoriteKey) ?? <String>[];
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isFavorite = favoriteIds
+          .map(int.tryParse)
+          .whereType<int>()
+          .contains(widget.item.id);
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    final favoriteIds = (_prefs.getStringList(_favoriteKey) ?? <String>[])
+        .map(int.tryParse)
+        .whereType<int>()
+        .toSet();
+
+    if (_isFavorite) {
+      favoriteIds.remove(widget.item.id);
+    } else {
+      favoriteIds.add(widget.item.id);
+    }
+
+    await _prefs.setStringList(
+      _favoriteKey,
+      favoriteIds.map((id) => id.toString()).toList(),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isFavorite = !_isFavorite;
+    });
   }
 
   Future<void> _loadData() async {
@@ -252,6 +300,15 @@ class _DetailScreenState extends State<DetailScreen> {
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         title: Text(widget.item.name),
+        actions: <Widget>[
+          IconButton(
+            onPressed: _toggleFavorite,
+            icon: Icon(
+              _isFavorite ? Icons.star : Icons.star_border,
+              color: _isFavorite ? Colors.amber : Colors.white,
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
