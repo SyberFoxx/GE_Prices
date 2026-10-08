@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/item_tile.dart';
+import '../widgets/skeletons.dart';
 import 'detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -319,9 +320,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 12),
         if (_isLoading)
-          const Expanded(
-            child: Center(
-              child: CircularProgressIndicator(color: AppTheme.accentColor),
+          Expanded(
+            child: ListView.builder(
+              itemCount: 6,
+              itemBuilder: (context, index) => const ItemRowSkeleton(),
             ),
           )
         else if (_errorMessage != null)
@@ -414,8 +416,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildMarketTab() {
     if (_marketLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.accentColor),
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        children: const <Widget>[
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              'Most traded (1h)',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          MarketSectionSkeleton(rows: 2),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              'Best margins (1h)',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          MarketSectionSkeleton(rows: 2),
+        ],
       );
     }
 

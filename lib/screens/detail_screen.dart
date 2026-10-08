@@ -10,6 +10,7 @@ import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
+import '../widgets/skeletons.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({
@@ -1051,14 +1052,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
                 const SizedBox(height: 18),
                 if (_isLoading)
-                  const SizedBox(
-                    height: 260,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.accentColor,
-                      ),
-                    ),
-                  )
+                  const ChartBlockSkeleton(height: 260)
                 else if (_errorMessage != null)
                   SizedBox(
                     height: 260,
