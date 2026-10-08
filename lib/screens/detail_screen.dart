@@ -299,6 +299,7 @@ class _DetailScreenState extends State<DetailScreen>
       _autoYScale = true;
       _manualMin = 0;
       _manualMax = 0;
+      selectedX = null;
     });
   }
 
@@ -432,6 +433,42 @@ class _DetailScreenState extends State<DetailScreen>
           maxY: maxVolume > 0 ? maxVolume * 1.2 : 1,
           barTouchData: BarTouchData(
             enabled: true,
+            touchCallback: (FlTouchEvent event, BarTouchResponse? response) {
+              if (response == null) {
+                if (selectedX != null) {
+                  setState(() {
+                    selectedX = null;
+                  });
+                }
+                return;
+              }
+
+              final touchedSpot = response.spot;
+              if (touchedSpot == null) {
+                if (selectedX != null) {
+                  setState(() {
+                    selectedX = null;
+                  });
+                }
+                return;
+              }
+
+              final touchedIndex = touchedSpot.touchedBarGroupIndex;
+              if (touchedIndex < 0 || touchedIndex >= points.length) {
+                if (selectedX != null) {
+                  setState(() {
+                    selectedX = null;
+                  });
+                }
+                return;
+              }
+
+              if (selectedX != touchedIndex) {
+                setState(() {
+                  selectedX = touchedIndex;
+                });
+              }
+            },
             touchTooltipData: BarTouchTooltipData(
               tooltipPadding: const EdgeInsets.all(10),
               fitInsideHorizontally: true,
@@ -460,9 +497,14 @@ class _DetailScreenState extends State<DetailScreen>
           barGroups: List.generate(volumes.length, (index) {
             final volume = volumes[index];
             if (volume == null) {
-              return BarChartGroupData(x: index, barsSpace: 4, barRods: const <BarChartRodData>[]);
+              return BarChartGroupData(
+                x: index,
+                barsSpace: 4,
+                barRods: const <BarChartRodData>[],
+              );
             }
 
+            final isSelected = selectedX == index;
             return BarChartGroupData(
               x: index,
               barsSpace: 4,
@@ -470,7 +512,9 @@ class _DetailScreenState extends State<DetailScreen>
                 BarChartRodData(
                   toY: volume,
                   width: 6,
-                  color: const Color(0xFF9AA3B2),
+                  color: isSelected
+                      ? const Color(0xFF9AD8FF)
+                      : const Color(0xFF9AA3B2),
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(5),
                     bottom: Radius.zero,
@@ -507,6 +551,18 @@ class _DetailScreenState extends State<DetailScreen>
         BarChartData(
           minY: minY,
           maxY: maxY,
+          extraLinesData: ExtraLinesData(
+            verticalLines: selectedX == null
+                ? const <VerticalLine>[]
+                : <VerticalLine>[
+                    VerticalLine(
+                      x: selectedX!.toDouble(),
+                      color: const Color(0xFF7AD3FF).withValues(alpha: 0.65),
+                      strokeWidth: 1.5,
+                      dashArray: [6, 6],
+                    ),
+                  ],
+          ),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -566,6 +622,7 @@ class _DetailScreenState extends State<DetailScreen>
             final point = points[index];
             final high = point.avgHighPrice?.toDouble() ?? 0;
             final low = point.avgLowPrice?.toDouble() ?? 0;
+            final isSelected = selectedX == index;
 
             return BarChartGroupData(
               x: index,
@@ -575,7 +632,9 @@ class _DetailScreenState extends State<DetailScreen>
                   BarChartRodData(
                     toY: high,
                     width: 5,
-                    color: const Color(0xFF7AD3FF),
+                    color: isSelected
+                        ? const Color(0xFF9AD8FF)
+                        : const Color(0xFF7AD3FF),
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                       bottom: Radius.zero,
@@ -585,7 +644,9 @@ class _DetailScreenState extends State<DetailScreen>
                   BarChartRodData(
                     toY: low,
                     width: 5,
-                    color: const Color(0xFF7CFFB2),
+                    color: isSelected
+                        ? const Color(0xFF9AF7C9)
+                        : const Color(0xFF7CFFB2),
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
                       bottom: Radius.zero,
@@ -668,6 +729,18 @@ class _DetailScreenState extends State<DetailScreen>
         LineChartData(
           minY: minY,
           maxY: maxY,
+          extraLinesData: ExtraLinesData(
+            verticalLines: selectedX == null
+                ? const <VerticalLine>[]
+                : <VerticalLine>[
+                    VerticalLine(
+                      x: selectedX!.toDouble(),
+                      color: const Color(0xFF7AD3FF).withValues(alpha: 0.65),
+                      strokeWidth: 1.5,
+                      dashArray: [6, 6],
+                    ),
+                  ],
+          ),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -678,6 +751,33 @@ class _DetailScreenState extends State<DetailScreen>
           borderData: FlBorderData(show: false),
           lineTouchData: LineTouchData(
             enabled: true,
+            touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
+              if (response == null || response.lineBarSpots == null || response.lineBarSpots!.isEmpty) {
+                if (selectedX != null) {
+                  setState(() {
+                    selectedX = null;
+                  });
+                }
+                return;
+              }
+
+              final spot = response.lineBarSpots!.first;
+              final touchedIndex = spot.x.toInt();
+              if (touchedIndex < 0 || touchedIndex >= points.length) {
+                if (selectedX != null) {
+                  setState(() {
+                    selectedX = null;
+                  });
+                }
+                return;
+              }
+
+              if (selectedX != touchedIndex) {
+                setState(() {
+                  selectedX = touchedIndex;
+                });
+              }
+            },
             touchTooltipData: LineTouchTooltipData(
               tooltipPadding: const EdgeInsets.all(10),
               fitInsideHorizontally: true,
@@ -777,6 +877,7 @@ class _DetailScreenState extends State<DetailScreen>
               onSelectionChanged: (selection) {
                 setState(() {
                   _chartMode = selection.first;
+                  selectedX = null;
                 });
               },
               style: ButtonStyle(
@@ -1089,6 +1190,7 @@ class _DetailScreenState extends State<DetailScreen>
                             _autoYScale = true;
                             _manualMin = 0;
                             _manualMax = 0;
+                            selectedX = null;
                           });
                           _loadData();
                         },
