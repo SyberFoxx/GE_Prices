@@ -83,3 +83,47 @@ class LatestPriceResponse {
     );
   }
 }
+
+class HistoricalPricePoint {
+  final int timestamp;
+  final int avgHighPrice;
+  final int avgLowPrice;
+
+  const HistoricalPricePoint({
+    required this.timestamp,
+    required this.avgHighPrice,
+    required this.avgLowPrice,
+  });
+
+  factory HistoricalPricePoint.fromJson(Map<String, dynamic> json) {
+    return HistoricalPricePoint(
+      timestamp: json['timestamp'] as int? ?? 0,
+      avgHighPrice: json['avgHighPrice'] as int? ?? 0,
+      avgLowPrice: json['avgLowPrice'] as int? ?? 0,
+    );
+  }
+}
+
+class HistoricalPriceResponse {
+  final List<HistoricalPricePoint> data;
+
+  const HistoricalPriceResponse({required this.data});
+
+  factory HistoricalPriceResponse.fromJson(Map<String, dynamic> json) {
+    final rawData = json['data'];
+
+    if (rawData is! List) {
+      return const HistoricalPriceResponse(data: <HistoricalPricePoint>[]);
+    }
+
+    return HistoricalPriceResponse(
+      data: rawData
+          .map(
+            (entry) => HistoricalPricePoint.fromJson(
+              Map<String, dynamic>.from(entry as Map),
+            ),
+          )
+          .toList(),
+    );
+  }
+}

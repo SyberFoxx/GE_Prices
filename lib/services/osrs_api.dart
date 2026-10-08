@@ -10,6 +10,8 @@ class OsrsApi {
       'https://prices.runescape.wiki/api/v1/osrs/mapping';
   static const String _latestUrl =
       'https://prices.runescape.wiki/api/v1/osrs/latest';
+  static const String _timeSeriesUrl =
+      'https://prices.runescape.wiki/api/v1/osrs/timeseries';
   static const String _userAgent = 'ge_prices-dev - prototipo personal';
 
   Future<List<ItemMapping>> fetchItemMapping() async {
@@ -58,5 +60,40 @@ class OsrsApi {
     }
 
     return LatestPriceResponse.fromJson(decoded);
+  }
+
+  Future<List<HistoricalPricePoint>> fetchHistoricalPrices({
+    required int itemId,
+    required String timestep,
+  }) async {
+    const allowedTimesteps = <String>{'5m', '1h', '6h', '24h'};
+    final normalizedTimestep = timestep.trim();
+
+    if (!allowedTimesteps.contains(normalizedTimestep)) {
+      throw ArgumentError('Unsupported timestep: $timestep');
+    }
+
+    final response = await http.get(
+      Uri.parse(
+        '$_timeSeriesUrl?id=${itemId.toString()}&timestep=$normalizedTimestep',
+      ),
+      headers: {
+        'User-Agent': _userAgent,
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode != HttpStatus.ok) {
+      throw HttpException(
+        'Error fetching historical prices: ${response.statusCode} ${response.reasonPhrase}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Historical prices response is not a map.');
+    }
+
+    return HistoricalPriceResponse.fromJson(decoded).data;
   }
 }

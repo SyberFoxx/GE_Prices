@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import 'detail_screen.dart';
 import '../widgets/item_list_tile.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -20,7 +20,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ItemMapping> _items = <ItemMapping>[];
   List<ItemMapping> _filteredItems = <ItemMapping>[];
   Map<String, ItemPrice> _latestPrices = <String, ItemPrice>{};
-  ItemMapping? _selectedItem;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -70,11 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
             .toList();
       }
     });
-  }
-
-  String _formatPrice(int value) {
-    final formatter = NumberFormat.decimalPattern('en_US');
-    return '${formatter.format(value)} gp';
   }
 
   @override
@@ -158,45 +152,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     item: item,
                     price: price,
                     onTap: () {
-                      setState(() {
-                        _selectedItem = item;
-                      });
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => DetailScreen(
+                            item: item,
+                            currentPrice: price,
+                          ),
+                        ),
+                      );
                     },
                   );
                 },
-              ),
-            ),
-          if (_selectedItem != null)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.panelColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    _selectedItem!.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'avgHigh: ${_formatPrice(_latestPrices[_selectedItem!.id.toString()]?.avgHigh ?? 0)}',
-                    style: const TextStyle(color: AppTheme.secondaryTextColor),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'avgLow: ${_formatPrice(_latestPrices[_selectedItem!.id.toString()]?.avgLow ?? 0)}',
-                    style: const TextStyle(color: AppTheme.secondaryTextColor),
-                  ),
-                ],
               ),
             ),
         ],
