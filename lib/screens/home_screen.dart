@@ -175,6 +175,29 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  double _alchemyProfitFor(ItemMapping item) {
+    if (item.highAlch <= 0) {
+      return 0;
+    }
+
+    final currentHigh = _latestPrices[item.id.toString()]?.high ?? 0;
+    if (currentHigh <= 0) {
+      return 0;
+    }
+
+    for (final candidate in _items) {
+      if (candidate.name == 'Nature rune') {
+        final natureRuneLow = _latestPrices[candidate.id.toString()]?.low ?? 0;
+        if (natureRuneLow <= 0) {
+          return 0;
+        }
+        return (item.highAlch - natureRuneLow - currentHigh).toDouble();
+      }
+    }
+
+    return 0;
+  }
+
   List<_MarketRow> _buildMarketRows() {
     final rows = <_MarketRow>[];
 
@@ -350,8 +373,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       final _ = await Navigator.push(
                         context,
                         MaterialPageRoute<void>(
-                          builder: (_) =>
-                              DetailScreen(item: item, currentPrice: price),
+                          builder: (_) => DetailScreen(
+                            item: item,
+                            currentPrice: price,
+                            allItems: _items,
+                            latestPrices: _latestPrices,
+                          ),
                         ),
                       );
 
@@ -366,7 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                     subtitle: price == null
                         ? const Text(
-                            'Sin datos disponibles',
+                            'No data available',
                             style: TextStyle(color: AppTheme.secondaryTextColor),
                           )
                         : Text(
@@ -431,6 +458,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (_) => DetailScreen(
                     item: row.item,
                     currentPrice: currentPrice,
+                    allItems: _items,
+                    latestPrices: _latestPrices,
                   ),
                 ),
               );
@@ -439,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Precio: ${PriceFormat.full(row.data.avgLowPrice)}',
+                  'Price: ${PriceFormat.full(row.data.avgLowPrice)}',
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
                 Text(
@@ -457,6 +486,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final netPct = row.netMarginPct;
           final netText =
               'Net est.: ${PriceFormat.full(netAmount.round())} gp ${netPct >= 0 ? '(+${netPct.toStringAsFixed(1)}%)' : '(${netPct.toStringAsFixed(1)}%)'}';
+          final alchemyProfit = _alchemyProfitFor(row.item);
 
           return ItemTile(
             item: row.item,
@@ -468,15 +498,46 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (_) => DetailScreen(
                     item: row.item,
                     currentPrice: currentPrice,
+                    allItems: _items,
+                    latestPrices: _latestPrices,
                   ),
                 ),
               );
             },
+            title: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    row.item.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (alchemyProfit > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Alch+',
+                      style: TextStyle(
+                        color: Colors.greenAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Precio: ${PriceFormat.full(row.data.avgLowPrice)}',
+                  'Price: ${PriceFormat.full(row.data.avgLowPrice)}',
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
                 Text(

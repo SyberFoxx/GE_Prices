@@ -5,6 +5,7 @@ class ItemMapping {
   final bool members;
   final int limit;
   final String icon;
+  final int highAlch;
 
   const ItemMapping({
     required this.id,
@@ -13,9 +14,17 @@ class ItemMapping {
     required this.members,
     required this.limit,
     required this.icon,
+    required this.highAlch,
   });
 
   factory ItemMapping.fromJson(Map<String, dynamic> json) {
+    int? toIntOrNull(dynamic value) {
+      if (value is num) {
+        return value.toInt();
+      }
+      return null;
+    }
+
     return ItemMapping(
       id: json['id'] as int? ?? 0,
       name: json['name'] as String? ?? '',
@@ -23,6 +32,9 @@ class ItemMapping {
       members: json['members'] as bool? ?? false,
       limit: json['limit'] as int? ?? 0,
       icon: json['icon'] as String? ?? '',
+      highAlch: toIntOrNull(json['highalch']) ??
+          toIntOrNull(json['highAlch']) ??
+          0,
     );
   }
 }

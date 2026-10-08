@@ -11,10 +11,18 @@ import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 
 class DetailScreen extends StatefulWidget {
-  const DetailScreen({super.key, required this.item, this.currentPrice});
+  const DetailScreen({
+    super.key,
+    required this.item,
+    this.currentPrice,
+    this.allItems = const <ItemMapping>[],
+    this.latestPrices = const <String, ItemPrice>{},
+  });
 
   final ItemMapping item;
   final ItemPrice? currentPrice;
+  final List<ItemMapping> allItems;
+  final Map<String, ItemPrice> latestPrices;
 
   @override
   State<DetailScreen> createState() => _DetailScreenState();
@@ -207,6 +215,41 @@ class _DetailScreenState extends State<DetailScreen> {
     }
 
     return '${_formatNumber(value)} gp';
+  }
+
+  ItemMapping? _findNatureRune() {
+    for (final item in widget.allItems) {
+      if (item.name == 'Nature rune') {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  double _alchemyProfit() {
+    if (widget.item.highAlch <= 0) {
+      return 0;
+    }
+
+    final currentHigh = widget.currentPrice?.high ??
+        widget.latestPrices[widget.item.id.toString()]?.high ??
+        0;
+    if (currentHigh <= 0) {
+      return 0;
+    }
+
+    final natureRune = _findNatureRune();
+    if (natureRune == null) {
+      return 0;
+    }
+
+    final natureRuneLow =
+        widget.latestPrices[natureRune.id.toString()]?.low ?? 0;
+    if (natureRuneLow <= 0) {
+      return 0;
+    }
+
+    return (widget.item.highAlch - natureRuneLow - currentHigh).toDouble();
   }
 
   void _toggleSeries(String series) {
@@ -827,6 +870,16 @@ class _DetailScreenState extends State<DetailScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        if (widget.item.examine.trim().isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.item.examine,
+                            style: const TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 6),
                         Text(
                           'High: ${_displayPrice(currentHigh)}',
@@ -846,6 +899,51 @@ class _DetailScreenState extends State<DetailScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+              if (widget.item.highAlch > 0) ...<Widget>[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.panelColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'Alchemy',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'High alch: ${PriceFormat.full(widget.item.highAlch)}',
+                        style: const TextStyle(color: AppTheme.secondaryTextColor),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Alch profit (est.): ${PriceFormat.full(_alchemyProfit().round())} gp',
+                        style: TextStyle(
+                          color: _alchemyProfit() > 0 ? Colors.green : Colors.redAccent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'assumes fire staff equipped, only nature rune cost',
+                        style: TextStyle(
+                          color: AppTheme.secondaryTextColor,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+              ],
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),

@@ -39,7 +39,7 @@ class ItemListTile extends StatelessWidget {
     if (price == null) {
       subtitleChildren.add(
         const Text(
-          'Sin datos disponibles',
+          'No data available',
           style: TextStyle(color: AppTheme.secondaryTextColor),
         ),
       );

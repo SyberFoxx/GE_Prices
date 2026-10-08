@@ -11,12 +11,14 @@ class ItemTile extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.trailing,
+    this.title,
   });
 
   final ItemMapping item;
   final VoidCallback onTap;
   final Widget? subtitle;
   final Widget? trailing;
+  final Widget? title;
 
   @override
   Widget build(BuildContext context) {
@@ -54,13 +56,14 @@ class ItemTile extends StatelessWidget {
                   ),
                 ),
         ),
-        title: Text(
-          item.name,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: title ??
+            Text(
+              item.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
         subtitle: subtitle,
         trailing: trailing ??
             const Icon(
