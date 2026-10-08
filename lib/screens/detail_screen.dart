@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/skeletons.dart';
+import '../widgets/updated_badge.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({
@@ -30,9 +31,11 @@ class DetailScreen extends StatefulWidget {
   State<DetailScreen> createState() => _DetailScreenState();
 }
 
-class _DetailScreenState extends State<DetailScreen> {
+class _DetailScreenState extends State<DetailScreen>
+    with WidgetsBindingObserver {
   final OsrsApi _api = OsrsApi();
   static const String _favoriteKey = 'favorite_item_ids';
+  static const Duration _timeseriesCacheTtl = Duration(minutes: 5);
 
   late SharedPreferences _prefs;
   List<HistoricalPricePoint> _points = <HistoricalPricePoint>[];
@@ -45,6 +48,7 @@ class _DetailScreenState extends State<DetailScreen> {
   double _manualMax = 0;
   String _selectedTimestep = '24h';
   String _chartMode = 'Lines';
+  DateTime? _timeseriesCacheAt;
   String? _errorMessage;
 
   static const List<String> _timestepOptions = <String>[
@@ -57,6 +61,7 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initFavoriteState();
     _loadData();
   }
@@ -75,6 +80,23 @@ class _DetailScreenState extends State<DetailScreen> {
           .whereType<int>()
           .contains(widget.item.id);
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final now = DateTime.now();
+      if (_timeseriesCacheAt == null ||
+          now.difference(_timeseriesCacheAt!) > _timeseriesCacheTtl) {
+        _loadData();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _toggleFavorite() async {
@@ -139,6 +161,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
       setState(() {
         _points = points;
+        _timeseriesCacheAt = DateTime.now();
         _isLoading = false;
       });
     } catch (error) {
@@ -820,6 +843,10 @@ class _DetailScreenState extends State<DetailScreen> {
       appBar: AppBar(
         title: Text(widget.item.name),
         actions: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: UpdatedBadge(lastUpdated: _timeseriesCacheAt),
+          ),
           IconButton(
             onPressed: _openWiki,
             icon: const Icon(Icons.open_in_new),
@@ -1012,43 +1039,51 @@ class _DetailScreenState extends State<DetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                SegmentedButton<String>(
-                  segments: _timestepOptions
-                      .map(
-                        (value) => ButtonSegment<String>(
-                          value: value,
-                          label: Text(value),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: SegmentedButton<String>(
+                        segments: _timestepOptions
+                            .map(
+                              (value) => ButtonSegment<String>(
+                                value: value,
+                                label: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        selected: <String>{_selectedTimestep},
+                        onSelectionChanged: (selection) {
+                          setState(() {
+                            _selectedTimestep = selection.first;
+                            _autoYScale = true;
+                            _manualMin = 0;
+                            _manualMax = 0;
+                          });
+                          _loadData();
+                        },
+                        style: ButtonStyle(
+                          backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                            states,
+                          ) {
+                            if (states.contains(WidgetState.selected)) {
+                              return AppTheme.accentColor;
+                            }
+                            return Colors.transparent;
+                          }),
+                          foregroundColor: WidgetStateProperty.resolveWith<Color>((
+                            states,
+                          ) {
+                            if (states.contains(WidgetState.selected)) {
+                              return Colors.black;
+                            }
+                            return Colors.white;
+                          }),
                         ),
-                      )
-                      .toList(),
-                  selected: <String>{_selectedTimestep},
-                  onSelectionChanged: (selection) {
-                    setState(() {
-                      _selectedTimestep = selection.first;
-                      _autoYScale = true;
-                      _manualMin = 0;
-                      _manualMax = 0;
-                    });
-                    _loadData();
-                  },
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith<Color>((
-                      states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return AppTheme.accentColor;
-                      }
-                      return Colors.transparent;
-                    }),
-                    foregroundColor: WidgetStateProperty.resolveWith<Color>((
-                      states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return Colors.black;
-                      }
-                      return Colors.white;
-                    }),
-                  ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    UpdatedBadge(lastUpdated: _timeseriesCacheAt),
+                  ],
                 ),
                 const SizedBox(height: 18),
                 if (_isLoading)

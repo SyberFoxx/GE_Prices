@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,6 +11,7 @@ import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/item_tile.dart';
 import '../widgets/skeletons.dart';
+import '../widgets/updated_badge.dart';
 import 'detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -36,11 +39,14 @@ class _MarketRow {
   final double netMarginPct;
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver {
   final OsrsApi _api = OsrsApi();
   final TextEditingController _searchController = TextEditingController();
   static const String _favoriteKey = 'favorite_item_ids';
+  static const String _autoRefreshKey = 'auto_refresh_seconds';
   static const Duration _hourlyCacheTtl = Duration(minutes: 5);
+  static const Duration _latestCacheTtl = Duration(minutes: 5);
   static const int _minimumMarketVolume = 500;
   static const int _minimumAvgLow = 100;
 
@@ -48,12 +54,15 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ItemMapping> _filteredItems = <ItemMapping>[];
   Map<String, ItemPrice> _latestPrices = <String, ItemPrice>{};
   Map<String, HourlyPriceData> _hourlyData = <String, HourlyPriceData>{};
+  DateTime? _latestCacheAt;
   DateTime? _hourlyCacheAt;
+  Timer? _autoRefreshTimer;
   Set<int> _favoriteItemIds = <int>{};
   bool _isLoading = true;
   bool _marketLoading = true;
   String? _errorMessage;
   String? _marketError;
+  int _autoRefreshSeconds = 0;
   String _selectedFavoriteFilter = 'All';
   String _selectedMembershipFilter = 'All';
   int _selectedTab = 0;
@@ -61,9 +70,28 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _readAutoRefreshPreference();
     _loadFavorites();
     _loadData();
     _loadMarketData();
+  }
+
+  Future<void> _readAutoRefreshPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _autoRefreshSeconds = prefs.getInt(_autoRefreshKey) ?? 0;
+    });
+    _restartAutoRefresh();
+  }
+
+  Future<void> _persistAutoRefreshPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_autoRefreshKey, _autoRefreshSeconds);
   }
 
   Future<void> _loadFavorites() async {
@@ -80,6 +108,65 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _restartAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+
+    if (_autoRefreshSeconds <= 0) {
+      return;
+    }
+
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    // wiki API asks for reasonable use; polling latest only, foreground only.
+    _autoRefreshTimer = Timer.periodic(
+      Duration(seconds: _autoRefreshSeconds),
+      (_) {
+        if (!mounted) {
+          return;
+        }
+        if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+          return;
+        }
+        if (_selectedTab == 0 || _selectedTab == 1) {
+          _loadData();
+        }
+      },
+    );
+  }
+
+  void _refreshVisibleTabIfNeeded() {
+    final now = DateTime.now();
+
+    if (_selectedTab == 1 && (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl)) {
+      _loadData();
+      return;
+    }
+
+    if (_selectedTab == 0) {
+      if (_hourlyCacheAt == null || now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
+        _loadMarketData();
+      }
+      if (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl) {
+        _loadData();
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _restartAutoRefresh();
+      _refreshVisibleTabIfNeeded();
+      return;
+    }
+
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
   Future<void> _loadData() async {
     try {
       final items = await _api.fetchItemMapping();
@@ -92,6 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _items = items;
         _latestPrices = latest.data;
+        _latestCacheAt = DateTime.now();
         _isLoading = false;
         _errorMessage = null;
         _applyFilters();
@@ -236,6 +324,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoRefreshTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -610,6 +700,30 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('GE Prices'),
         actions: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: UpdatedBadge(
+              lastUpdated: _selectedTab == 0
+                  ? (_hourlyCacheAt ?? _latestCacheAt)
+                  : _latestCacheAt,
+            ),
+          ),
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.timer_outlined),
+            tooltip: 'Auto refresh',
+            onSelected: (value) {
+              setState(() {
+                _autoRefreshSeconds = value;
+              });
+              _persistAutoRefreshPreference();
+              _restartAutoRefresh();
+            },
+            itemBuilder: (context) => const <PopupMenuEntry<int>>[
+              PopupMenuItem<int>(value: 0, child: Text('Off')),
+              PopupMenuItem<int>(value: 30, child: Text('30s')),
+              PopupMenuItem<int>(value: 60, child: Text('60s')),
+            ],
+          ),
           IconButton(
             onPressed: () {
               Navigator.push(
@@ -634,6 +748,8 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _selectedTab = index;
           });
+          _refreshVisibleTabIfNeeded();
+          _restartAutoRefresh();
         },
         destinations: const <Widget>[
           NavigationDestination(
