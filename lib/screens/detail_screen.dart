@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import '../utils/ge_tax.dart';
+import '../utils/price_format.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.item, this.currentPrice});
@@ -26,8 +28,14 @@ class _DetailScreenState extends State<DetailScreen> {
   List<HistoricalPricePoint> _points = <HistoricalPricePoint>[];
   bool _isLoading = true;
   bool _isFavorite = false;
-  String? _errorMessage;
+  bool _showHigh = true;
+  bool _showLow = true;
+  bool _autoYScale = true;
+  double _manualMin = 0;
+  double _manualMax = 0;
   String _selectedTimestep = '24h';
+  String _chartMode = 'Lines';
+  String? _errorMessage;
 
   static const List<String> _timestepOptions = <String>[
     '5m',
@@ -89,6 +97,9 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _autoYScale = true;
+      _manualMin = 0;
+      _manualMax = 0;
     });
 
     try {
@@ -113,9 +124,66 @@ class _DetailScreenState extends State<DetailScreen> {
       setState(() {
         _isLoading = false;
         _errorMessage =
-            'No se pudo cargar la gráfica histórica. Inténtalo de nuevo.';
+            'Could not load the historical chart. Please try again.';
       });
     }
+  }
+
+  List<HistoricalPricePoint> get _validPoints => _points
+      .where(
+        (point) => point.avgHighPrice != null && point.avgLowPrice != null,
+      )
+      .toList();
+
+  List<HistoricalPricePoint> get _displayPoints {
+    final points = _validPoints;
+    if (_chartMode == 'Bars' && points.length > 60) {
+      return points.sublist(points.length - 60);
+    }
+    return points;
+  }
+
+  Map<String, double> _resolveYRange(List<HistoricalPricePoint> points) {
+    final values = <double>[];
+
+    for (final point in points) {
+      if (_showHigh && point.avgHighPrice != null) {
+        values.add(point.avgHighPrice!.toDouble());
+      }
+      if (_showLow && point.avgLowPrice != null) {
+        values.add(point.avgLowPrice!.toDouble());
+      }
+    }
+
+    if (values.isEmpty) {
+      return <String, double>{'min': 0, 'max': 1};
+    }
+
+    final minValue = values.reduce((a, b) => a < b ? a : b);
+    final maxValue = values.reduce((a, b) => a > b ? a : b);
+    final span = maxValue - minValue;
+    final padding = span > 0 ? span * 0.12 : (maxValue == 0 ? 10.0 : maxValue * 0.12);
+
+    return <String, double>{
+      'min': minValue - padding,
+      'max': maxValue + padding,
+    };
+  }
+
+  double _percentageChange() {
+    final validPoints = _validPoints;
+
+    if (validPoints.length < 2) {
+      return 0;
+    }
+
+    final first = validPoints.first.avgHighPrice!;
+    final last = validPoints.last.avgHighPrice!;
+    if (first == 0) {
+      return 0;
+    }
+
+    return ((last - first) / first) * 100;
   }
 
   String _formatNumber(int value) {
@@ -141,70 +209,366 @@ class _DetailScreenState extends State<DetailScreen> {
     return '${_formatNumber(value)} gp';
   }
 
-  double _percentageChange() {
-    final validPoints = _points
-        .where(
-          (point) => point.avgHighPrice != null && point.avgLowPrice != null,
-        )
-        .toList();
-
-    if (validPoints.length < 2) {
-      return 0;
-    }
-
-    final first = validPoints.first.avgHighPrice!;
-    final last = validPoints.last.avgHighPrice!;
-    if (first == 0) {
-      return 0;
-    }
-
-    return ((last - first) / first) * 100;
+  void _toggleSeries(String series) {
+    setState(() {
+      if (series == 'High') {
+        _showHigh = !_showHigh;
+        if (!_showHigh && !_showLow) {
+          _showHigh = true;
+        }
+      } else {
+        _showLow = !_showLow;
+        if (!_showHigh && !_showLow) {
+          _showLow = true;
+        }
+      }
+      _autoYScale = true;
+      _manualMin = 0;
+      _manualMax = 0;
+    });
   }
 
-  Widget _buildChart() {
-    final validPoints = _points
-        .where(
-          (point) => point.avgHighPrice != null && point.avgLowPrice != null,
-        )
-        .toList();
+  void _openYScaleSheet() {
+    final range = _resolveYRange(_displayPoints);
+    var values = RangeValues(
+      _autoYScale ? range['min']! : _manualMin,
+      _autoYScale ? range['max']! : _manualMax,
+    );
 
-    if (validPoints.isEmpty) {
+    if (values.start >= values.end) {
+      values = RangeValues(range['min']!, range['max']!);
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext modalContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Wrap(
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Text(
+                        'Escala del eje Y',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () {
+                          Navigator.pop(modalContext);
+                          setState(() {
+                            _autoYScale = true;
+                            _manualMin = 0;
+                            _manualMax = 0;
+                          });
+                        },
+                        icon: const Icon(Icons.refresh, color: AppTheme.accentColor),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  RangeSlider(
+                    min: range['min']!,
+                    max: range['max']!,
+                    values: values,
+                    labels: RangeLabels(
+                      '${values.start.round()} gp',
+                      '${values.end.round()} gp',
+                    ),
+                    onChanged: (RangeValues newValues) {
+                      setModalState(() {
+                        values = newValues;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _autoYScale = true;
+                            _manualMin = 0;
+                            _manualMax = 0;
+                          });
+                          Navigator.pop(modalContext);
+                        },
+                        child: const Text('Auto'),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accentColor,
+                        ),
+                        onPressed: () {
+                          Navigator.pop(modalContext);
+                          setState(() {
+                            _autoYScale = false;
+                            _manualMin = values.start;
+                            _manualMax = values.end;
+                          });
+                        },
+                        child: const Text(
+                          'Apply',
+                          style: TextStyle(color: Colors.black),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildVolumeChart() {
+    final points = _displayPoints;
+    if (points.isEmpty) {
+      return const SizedBox(height: 80);
+    }
+
+    final volumes = points
+        .map((point) {
+          final high = point.avgHighPrice ?? 0;
+          final low = point.avgLowPrice ?? 0;
+          final spread = (high - low).abs();
+          return spread > 0 ? spread.toDouble() : 1.0;
+        })
+        .toList();
+    final maxVolume = volumes.reduce((a, b) => a > b ? a : b);
+
+    return SizedBox(
+      height: 80,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxVolume > 0 ? maxVolume * 1.2 : 1,
+          barTouchData: const BarTouchData(enabled: false),
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          titlesData: const FlTitlesData(show: false),
+          barGroups: List.generate(volumes.length, (index) {
+            final volume = volumes[index];
+            return BarChartGroupData(
+              x: index,
+              barsSpace: 4,
+              barRods: [
+                BarChartRodData(
+                  toY: volume,
+                  width: 6,
+                  color: const Color(0xFF9AA3B2),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(5),
+                    bottom: Radius.zero,
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChart(List<HistoricalPricePoint> points) {
+    if (points.isEmpty) {
       return const SizedBox(
         height: 260,
         child: Center(
           child: Text(
-            'No hay datos para este período.',
+            'No data for this period.',
             style: TextStyle(color: AppTheme.secondaryTextColor),
           ),
         ),
       );
     }
 
-    final maxValue = validPoints
-        .reduce(
-          (current, next) =>
-              current.avgHighPrice! > next.avgHighPrice! ? current : next,
-        )
-        .avgHighPrice!;
-    final minValue = validPoints
-        .reduce(
-          (current, next) =>
-              current.avgLowPrice! < next.avgLowPrice! ? current : next,
-        )
-        .avgLowPrice!;
-    final yMin = (minValue * 0.9).floorToDouble();
-    final yMax = (maxValue * 1.1).ceilToDouble();
+    final yRange = _resolveYRange(points);
+    final minY = _autoYScale ? yRange['min']! : _manualMin;
+    final maxY = _autoYScale ? yRange['max']! : _manualMax;
+
+    return SizedBox(
+      height: 260,
+      child: BarChart(
+        BarChartData(
+          minY: minY,
+          maxY: maxY,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: (maxY - minY) / 4,
+            getDrawingHorizontalLine: (_) =>
+                const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 60,
+                interval: (maxY - minY) / 3,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    NumberFormat.compact().format(value.toInt()),
+                    style: const TextStyle(
+                      color: AppTheme.secondaryTextColor,
+                      fontSize: 10,
+                    ),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: (points.length - 1) / 3,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= points.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _formatDate(points[index].timestamp),
+                      style: const TextStyle(
+                        color: AppTheme.secondaryTextColor,
+                        fontSize: 10,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          barGroups: List.generate(points.length, (index) {
+            final point = points[index];
+            final high = point.avgHighPrice?.toDouble() ?? 0;
+            final low = point.avgLowPrice?.toDouble() ?? 0;
+
+            return BarChartGroupData(
+              x: index,
+              barsSpace: 4,
+              barRods: <BarChartRodData>[
+                if (_showHigh)
+                  BarChartRodData(
+                    toY: high,
+                    width: 5,
+                    color: const Color(0xFF7AD3FF),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(4),
+                      bottom: Radius.zero,
+                    ),
+                  ),
+                if (_showLow)
+                  BarChartRodData(
+                    toY: low,
+                    width: 5,
+                    color: const Color(0xFF7CFFB2),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(4),
+                      bottom: Radius.zero,
+                    ),
+                  ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineChart(List<HistoricalPricePoint> points) {
+    if (points.isEmpty) {
+      return const SizedBox(
+        height: 260,
+        child: Center(
+          child: Text(
+            'No data for this period.',
+            style: TextStyle(color: AppTheme.secondaryTextColor),
+          ),
+        ),
+      );
+    }
+
+    final yRange = _resolveYRange(points);
+    final minY = _autoYScale ? yRange['min']! : _manualMin;
+    final maxY = _autoYScale ? yRange['max']! : _manualMax;
+
+    final lineBarsData = <LineChartBarData>[];
+    if (_showHigh) {
+      lineBarsData.add(
+        LineChartBarData(
+          isCurved: true,
+          color: const Color(0xFF7AD3FF),
+          barWidth: 3,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            color: const Color(0xFF7AD3FF).withValues(alpha: 0.12),
+          ),
+          spots: List.generate(
+            points.length,
+            (index) => FlSpot(
+              index.toDouble(),
+              points[index].avgHighPrice!.toDouble(),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_showLow) {
+      lineBarsData.add(
+        LineChartBarData(
+          isCurved: true,
+          color: const Color(0xFF7CFFB2),
+          barWidth: 3,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            color: const Color(0xFF7CFFB2).withValues(alpha: 0.08),
+          ),
+          spots: List.generate(
+            points.length,
+            (index) => FlSpot(
+              index.toDouble(),
+              points[index].avgLowPrice!.toDouble(),
+            ),
+          ),
+        ),
+      );
+    }
 
     return SizedBox(
       height: 260,
       child: LineChart(
         LineChartData(
-          minY: yMin,
-          maxY: yMax,
+          minY: minY,
+          maxY: maxY,
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: (yMax - yMin) / 4,
+            horizontalInterval: (maxY - minY) / 4,
             getDrawingHorizontalLine: (_) =>
                 const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
           ),
@@ -233,7 +597,7 @@ class _DetailScreenState extends State<DetailScreen> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 60,
-                interval: (yMax - yMin) / 3,
+                interval: (maxY - minY) / 3,
                 getTitlesWidget: (value, meta) {
                   return Text(
                     NumberFormat.compact().format(value.toInt()),
@@ -249,16 +613,16 @@ class _DetailScreenState extends State<DetailScreen> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 28,
-                interval: (validPoints.length - 1) / 3,
+                interval: (points.length - 1) / 3,
                 getTitlesWidget: (value, meta) {
                   final index = value.toInt();
-                  if (index < 0 || index >= validPoints.length) {
+                  if (index < 0 || index >= points.length) {
                     return const SizedBox.shrink();
                   }
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      _formatDate(validPoints[index].timestamp),
+                      _formatDate(points[index].timestamp),
                       style: const TextStyle(
                         color: AppTheme.secondaryTextColor,
                         fontSize: 10,
@@ -275,46 +639,111 @@ class _DetailScreenState extends State<DetailScreen> {
               sideTitles: SideTitles(showTitles: false),
             ),
           ),
-          lineBarsData: [
-            LineChartBarData(
-              isCurved: true,
-              color: const Color(0xFF7AD3FF),
-              barWidth: 3,
-              isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: const Color(0xFF7AD3FF).withValues(alpha: 0.12),
-              ),
-              spots: List.generate(
-                validPoints.length,
-                (index) => FlSpot(
-                  index.toDouble(),
-                  validPoints[index].avgHighPrice!.toDouble(),
-                ),
+          lineBarsData: lineBarsData,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChart() {
+    final points = _displayPoints;
+    if (points.isEmpty) {
+      return const SizedBox(
+        height: 260,
+        child: Center(
+          child: Text(
+            'No data for this period.',
+            style: TextStyle(color: AppTheme.secondaryTextColor),
+          ),
+        ),
+      );
+    }
+
+    final chart = _chartMode == 'Bars' ? _buildBarChart(points) : _buildLineChart(points);
+
+    return Column(
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            SegmentedButton<String>(
+              segments: const <ButtonSegment<String>>[
+                ButtonSegment<String>(value: 'Lines', label: Text('Lines')),
+                ButtonSegment<String>(value: 'Bars', label: Text('Bars')),
+              ],
+              selected: <String>{_chartMode},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _chartMode = selection.first;
+                });
+              },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return AppTheme.accentColor;
+                  }
+                  return Colors.transparent;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return Colors.black;
+                  }
+                  return Colors.white;
+                }),
               ),
             ),
-            LineChartBarData(
-              isCurved: true,
-              color: const Color(0xFF7CFFB2),
-              barWidth: 3,
-              isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: const Color(0xFF7CFFB2).withValues(alpha: 0.08),
+            const Spacer(),
+            IconButton(
+              onPressed: _openYScaleSheet,
+              icon: const Icon(Icons.tune, color: Colors.white),
+              tooltip: 'Adjust Y axis',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          children: <Widget>[
+            ChoiceChip(
+              label: const Text('High'),
+              selected: _showHigh,
+              onSelected: (_) => _toggleSeries('High'),
+              selectedColor: const Color(0xFF7AD3FF),
+              backgroundColor: AppTheme.panelColor,
+              labelStyle: TextStyle(
+                color: _showHigh ? Colors.black : Colors.white,
+                fontWeight: FontWeight.w600,
               ),
-              spots: List.generate(
-                validPoints.length,
-                (index) => FlSpot(
-                  index.toDouble(),
-                  validPoints[index].avgLowPrice!.toDouble(),
-                ),
+            ),
+            ChoiceChip(
+              label: const Text('Low'),
+              selected: _showLow,
+              onSelected: (_) => _toggleSeries('Low'),
+              selectedColor: const Color(0xFF7CFFB2),
+              backgroundColor: AppTheme.panelColor,
+              labelStyle: TextStyle(
+                color: _showLow ? Colors.black : Colors.white,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        chart,
+        const SizedBox(height: 12),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Volume',
+            style: TextStyle(
+              color: AppTheme.secondaryTextColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildVolumeChart(),
+      ],
     );
   }
 
@@ -324,6 +753,18 @@ class _DetailScreenState extends State<DetailScreen> {
     final changeColor = percentageChange >= 0 ? Colors.green : Colors.red;
     final currentHigh = widget.currentPrice?.high;
     final currentLow = widget.currentPrice?.low;
+    final grossMargin =
+        currentHigh != null && currentLow != null && currentHigh > 0 && currentLow > 0
+            ? currentHigh - currentLow
+            : null;
+    final netMargin =
+        currentHigh != null && currentLow != null && currentHigh > 0 && currentLow > 0
+            ? GeTax.netMargin(high: currentHigh, low: currentLow)
+            : null;
+    final netMarginPct =
+        currentLow != null && currentLow > 0 && netMargin != null
+            ? (netMargin / currentLow) * 100
+            : 0.0;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -412,20 +853,42 @@ class _DetailScreenState extends State<DetailScreen> {
                   color: AppTheme.panelColor,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
-                      'Cambio del período',
-                      style: TextStyle(color: AppTheme.secondaryTextColor),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const Text(
+                          'Period change',
+                          style: TextStyle(color: AppTheme.secondaryTextColor),
+                        ),
+                        Text(
+                          '${percentageChange >= 0 ? '+' : ''}${percentageChange.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: changeColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '${percentageChange >= 0 ? '+' : ''}${percentageChange.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        color: changeColor,
-                        fontWeight: FontWeight.bold,
+                    if (grossMargin != null) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Gross margin: ${PriceFormat.full(grossMargin)} gp',
+                        style: const TextStyle(color: Colors.white),
                       ),
-                    ),
+                    ],
+                    if (netMargin != null) ...<Widget>[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Net est.: ${PriceFormat.full(netMargin.round())} gp ${netMarginPct >= 0 ? '(+${netMarginPct.toStringAsFixed(1)}%)' : '(${netMarginPct.toStringAsFixed(1)}%)'}',
+                        style: TextStyle(
+                          color: netMargin >= 0 ? Colors.green : Colors.redAccent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -443,6 +906,9 @@ class _DetailScreenState extends State<DetailScreen> {
                 onSelectionChanged: (selection) {
                   setState(() {
                     _selectedTimestep = selection.first;
+                    _autoYScale = true;
+                    _manualMin = 0;
+                    _manualMax = 0;
                   });
                   _loadData();
                 },

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/item_tile.dart';
 import 'detail_screen.dart';
@@ -21,12 +22,16 @@ class _MarketRow {
     required this.data,
     required this.totalVolume,
     required this.marginPct,
+    required this.netMargin,
+    required this.netMarginPct,
   });
 
   final ItemMapping item;
   final HourlyPriceData data;
   final int totalVolume;
   final double marginPct;
+  final double netMargin;
+  final double netMarginPct;
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -47,8 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _marketLoading = true;
   String? _errorMessage;
   String? _marketError;
-  String _selectedFavoriteFilter = 'Todos';
-  String _selectedMembershipFilter = 'Todos';
+  String _selectedFavoriteFilter = 'All';
+  String _selectedMembershipFilter = 'All';
   int _selectedTab = 0;
 
   @override
@@ -97,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isLoading = false;
         _errorMessage =
-            'No se pudo cargar la lista de precios. La API de RuneScape Wiki no respondió.';
+            'Could not load the price list. The RuneScape Wiki API did not respond.';
       });
     }
   }
@@ -134,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         _marketLoading = false;
-        _marketError = 'No se pudo cargar el dashboard del mercado.';
+        _marketError = 'Could not load the market dashboard.';
       });
     }
   }
@@ -143,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = _searchController.text.trim().toLowerCase();
     var results = _items;
 
-    if (_selectedFavoriteFilter == 'Favoritos') {
+    if (_selectedFavoriteFilter == 'Favorites') {
       results = results
           .where((item) => _favoriteItemIds.contains(item.id))
           .toList();
@@ -182,6 +187,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final totalVolume = stat.highPriceVolume + stat.lowPriceVolume;
       final margin = stat.avgHighPrice - stat.avgLowPrice;
       final pct = stat.avgLowPrice > 0 ? (margin / stat.avgLowPrice) * 100 : 0.0;
+      final netMargin = GeTax.netMargin(
+        high: stat.avgHighPrice,
+        low: stat.avgLowPrice,
+      );
+      final netMarginPct = stat.avgLowPrice > 0 ? (netMargin / stat.avgLowPrice) * 100 : 0.0;
 
       rows.add(
         _MarketRow(
@@ -189,6 +199,8 @@ class _HomeScreenState extends State<HomeScreen> {
           data: stat,
           totalVolume: totalVolume,
           marginPct: pct,
+          netMargin: netMargin,
+          netMarginPct: netMarginPct,
         ),
       );
     }
@@ -213,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onChanged: _onSearchChanged,
             style: const TextStyle(color: Colors.white),
             decoration: const InputDecoration(
-              hintText: 'Buscar item...',
+              hintText: 'Search items...',
               hintStyle: TextStyle(color: AppTheme.secondaryTextColor),
               prefixIcon: Icon(
                 Icons.search,
@@ -226,12 +238,12 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: ToggleButtons(
             isSelected: <bool>[
-              _selectedFavoriteFilter == 'Todos',
-              _selectedFavoriteFilter == 'Favoritos',
+              _selectedFavoriteFilter == 'All',
+              _selectedFavoriteFilter == 'Favorites',
             ],
             onPressed: (int index) {
               setState(() {
-                _selectedFavoriteFilter = index == 0 ? 'Todos' : 'Favoritos';
+                _selectedFavoriteFilter = index == 0 ? 'All' : 'Favorites';
                 _applyFilters();
               });
             },
@@ -242,11 +254,11 @@ class _HomeScreenState extends State<HomeScreen> {
             children: const <Widget>[
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('Todos'),
+                child: Text('All'),
               ),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('Favoritos'),
+                child: Text('Favorites'),
               ),
             ],
           ),
@@ -257,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: <String>['Todos', 'F2P', 'Members']
+            children: <String>['All', 'F2P', 'Members']
                 .map((filter) {
                   final isSelected = _selectedMembershipFilter == filter;
                   return ChoiceChip(
@@ -316,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const Expanded(
             child: Center(
               child: Text(
-                'No se encontraron resultados.',
+                'No results found.',
                 style: TextStyle(color: AppTheme.secondaryTextColor),
               ),
             ),
@@ -401,12 +413,12 @@ class _HomeScreenState extends State<HomeScreen> {
               row.data.avgLowPrice >= _minimumAvgLow,
         )
         .toList()
-      ..sort((a, b) => b.marginPct.compareTo(a.marginPct));
+      ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: <Widget>[
-        _buildSectionHeader('Más vendidos (1h)'),
+        _buildSectionHeader('Most traded (1h)'),
         ...topVolume.map((row) {
           final totalVolume = row.totalVolume;
           return ItemTile(
@@ -431,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
                 Text(
-                  '${PriceFormat.compact(totalVolume)} en 1h',
+                  '${PriceFormat.compact(totalVolume)} traded in 1h',
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
               ],
@@ -439,12 +451,12 @@ class _HomeScreenState extends State<HomeScreen> {
             trailing: const SizedBox.shrink(),
           );
         }),
-        _buildSectionHeader('Mejores márgenes (1h)'),
+        _buildSectionHeader('Best margins (1h)'),
         ...bestMargins.take(20).map((row) {
-          final marginText = PriceFormat.marginText(
-            high: row.data.avgHighPrice,
-            low: row.data.avgLowPrice,
-          );
+          final netAmount = row.netMargin;
+          final netPct = row.netMarginPct;
+          final netText =
+              'Net est.: ${PriceFormat.full(netAmount.round())} gp ${netPct >= 0 ? '(+${netPct.toStringAsFixed(1)}%)' : '(${netPct.toStringAsFixed(1)}%)'}';
 
           return ItemTile(
             item: row.item,
@@ -468,9 +480,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
                 Text(
-                  marginText,
+                  netText,
                   style: TextStyle(
-                    color: row.marginPct >= 2 ? Colors.green : AppTheme.secondaryTextColor,
+                    color: netAmount >= 0 ? Colors.green : Colors.redAccent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -521,12 +533,12 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.trending_up_outlined),
             selectedIcon: Icon(Icons.trending_up),
-            label: 'Mercado',
+            label: 'Market',
           ),
           NavigationDestination(
             icon: Icon(Icons.search_outlined),
             selectedIcon: Icon(Icons.search),
-            label: 'Buscar',
+            label: 'Search',
           ),
         ],
       ),

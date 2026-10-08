@@ -36,7 +36,7 @@ class PriceFormat {
     final pct = (margin / low) * 100;
     final sign = pct >= 0 ? '+' : '';
 
-    return 'Margen: ${NumberFormat.decimalPattern('en_US').format(margin)} gp ($sign${pct.toStringAsFixed(1)}%)';
+    return 'Margin: ${NumberFormat.decimalPattern('en_US').format(margin)} gp ($sign${pct.toStringAsFixed(1)}%)';
   }
 
   static String _trimTrailingZeros(double value) {

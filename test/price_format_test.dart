@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ge_prices/utils/ge_tax.dart';
 import 'package:ge_prices/utils/price_format.dart';
 
 void main() {
@@ -12,8 +13,15 @@ void main() {
     test('formats margin with percentage', () {
       expect(
         PriceFormat.marginText(high: 8523, low: 8300),
-        'Margen: 223 gp (+2.7%)',
+        'Margin: 223 gp (+2.7%)',
       );
+    });
+  });
+
+  group('GeTax', () {
+    test('calculates net margin after GE tax', () {
+      expect(GeTax.netMargin(high: 10000, low: 9000), 800.0);
+      expect(GeTax.netMargin(high: 100000000, low: 90000000), 8000000.0);
     });
   });
 }
