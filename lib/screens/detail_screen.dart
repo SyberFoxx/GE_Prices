@@ -48,6 +48,7 @@ class _DetailScreenState extends State<DetailScreen>
   double _manualMax = 0;
   String _selectedTimestep = '24h';
   String _chartMode = 'Lines';
+  int? selectedX;
   DateTime? _timeseriesCacheAt;
   String? _errorMessage;
 
@@ -147,6 +148,7 @@ class _DetailScreenState extends State<DetailScreen>
       _autoYScale = true;
       _manualMin = 0;
       _manualMax = 0;
+      selectedX = null;
     });
 
     try {
@@ -410,15 +412,17 @@ class _DetailScreenState extends State<DetailScreen>
       return const SizedBox(height: 80);
     }
 
-    final volumes = points
-        .map((point) {
-          final high = point.avgHighPrice ?? 0;
-          final low = point.avgLowPrice ?? 0;
-          final spread = (high - low).abs();
-          return spread > 0 ? spread.toDouble() : 1.0;
-        })
-        .toList();
-    final maxVolume = volumes.reduce((a, b) => a > b ? a : b);
+    final volumes = <double?>[];
+    for (final point in points) {
+      final high = point.avgHighPrice ?? 0;
+      final low = point.avgLowPrice ?? 0;
+      final spread = (high - low).abs();
+      volumes.add(spread > 0 ? spread.toDouble() : null);
+    }
+
+    final maxVolume = volumes
+        .whereType<double>()
+        .fold<double>(0, (double acc, double value) => value > acc ? value : acc);
 
     return SizedBox(
       height: 80,
@@ -426,12 +430,39 @@ class _DetailScreenState extends State<DetailScreen>
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
           maxY: maxVolume > 0 ? maxVolume * 1.2 : 1,
-          barTouchData: const BarTouchData(enabled: false),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              tooltipPadding: const EdgeInsets.all(10),
+              fitInsideHorizontally: true,
+              tooltipMargin: 8,
+              tooltipBorder: BorderSide.none,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final point = points[groupIndex];
+                final volume = volumes[groupIndex];
+                final label = volume == null
+                    ? 'No trades'
+                    : NumberFormat.compact().format(volume.round());
+                return BarTooltipItem(
+                  '$label\n${_formatDate(point.timestamp)}',
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                );
+              },
+            ),
+          ),
           gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: const FlTitlesData(show: false),
           barGroups: List.generate(volumes.length, (index) {
             final volume = volumes[index];
+            if (volume == null) {
+              return BarChartGroupData(x: index, barsSpace: 4, barRods: const <BarChartRodData>[]);
+            }
+
             return BarChartGroupData(
               x: index,
               barsSpace: 4,
