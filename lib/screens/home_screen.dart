@@ -469,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Price: ${PriceFormat.full(row.data.avgLowPrice)}',
+                  'Price: ${PriceFormat.price(row.data.avgLowPrice)}',
                   style: const TextStyle(color: AppTheme.secondaryTextColor),
                 ),
                 Text(
@@ -486,7 +486,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final netAmount = row.netMargin;
           final netPct = row.netMarginPct;
           final netText =
-              'Net est.: ${PriceFormat.full(netAmount.round())} gp ${netPct >= 0 ? '(+${netPct.toStringAsFixed(1)}%)' : '(${netPct.toStringAsFixed(1)}%)'}';
+              'Net est.: ${PriceFormat.price(netAmount.round())} ${netPct >= 0 ? '(+${netPct.toStringAsFixed(1)}%)' : '(${netPct.toStringAsFixed(1)}%)'}';
           final alchemyProfit = _alchemyProfitFor(row.item);
 
           return ItemTile(

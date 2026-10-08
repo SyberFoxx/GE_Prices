@@ -210,11 +210,6 @@ class _DetailScreenState extends State<DetailScreen> {
     return ((last - first) / first) * 100;
   }
 
-  String _formatNumber(int value) {
-    final formatter = NumberFormat.decimalPattern('en_US');
-    return formatter.format(value);
-  }
-
   String _compactPrice(int value) {
     final formatter = NumberFormat.compact();
     return '${formatter.format(value)} gp';
@@ -225,13 +220,7 @@ class _DetailScreenState extends State<DetailScreen> {
     return DateFormat('MMM d').format(date);
   }
 
-  String _displayPrice(int? value) {
-    if (value == null) {
-      return '—';
-    }
-
-    return '${_formatNumber(value)} gp';
-  }
+  String _displayPrice(int? value) => PriceFormat.price(value);
 
   ItemMapping? _findNatureRune() {
     for (final item in widget.allItems) {
@@ -845,82 +834,127 @@ class _DetailScreenState extends State<DetailScreen> {
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: 52,
-                    height: 52,
-                    child: widget.item.icon.trim().isEmpty
-                        ? const Icon(
-                            Icons.inventory_2,
-                            color: AppTheme.secondaryTextColor,
-                          )
-                        : CachedNetworkImage(
-                            imageUrl:
-                                'https://oldschool.runescape.wiki/images/${widget.item.icon.replaceAll(' ', '_')}',
-                            memCacheWidth: 64,
-                            fit: BoxFit.contain,
-                            placeholder: (context, url) => Container(
-                              color: const Color(0xFF2A2A2A),
-                              child: const Icon(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: widget.item.icon.trim().isEmpty
+                          ? const Icon(
+                              Icons.inventory_2,
+                              color: AppTheme.secondaryTextColor,
+                            )
+                          : CachedNetworkImage(
+                              imageUrl:
+                                  'https://oldschool.runescape.wiki/images/${widget.item.icon.replaceAll(' ', '_')}',
+                              memCacheWidth: 64,
+                              fit: BoxFit.contain,
+                              placeholder: (context, url) => Container(
+                                color: const Color(0xFF2A2A2A),
+                                child: const Icon(
+                                  Icons.inventory_2,
+                                  color: AppTheme.secondaryTextColor,
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => const Icon(
                                 Icons.inventory_2,
                                 color: AppTheme.secondaryTextColor,
                               ),
                             ),
-                            errorWidget: (context, url, error) => const Icon(
-                              Icons.inventory_2,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            widget.item.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (widget.item.examine.trim().isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.item.examine,
+                              style: const TextStyle(
+                                color: AppTheme.secondaryTextColor,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          Text(
+                            'High: ${_displayPrice(currentHigh)}',
+                            style: const TextStyle(
                               color: AppTheme.secondaryTextColor,
                             ),
                           ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          widget.item.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        if (widget.item.examine.trim().isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 4),
                           Text(
-                            widget.item.examine,
+                            'Low: ${_displayPrice(currentLow)}',
                             style: const TextStyle(
                               color: AppTheme.secondaryTextColor,
-                              fontStyle: FontStyle.italic,
                             ),
                           ),
                         ],
-                        const SizedBox(height: 6),
-                        Text(
-                          'High: ${_displayPrice(currentHigh)}',
-                          style: const TextStyle(
-                            color: AppTheme.secondaryTextColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (widget.item.highAlch > 0) ...<Widget>[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.panelColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Alchemy',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 8),
                         Text(
-                          'Low: ${_displayPrice(currentLow)}',
-                          style: const TextStyle(
+                          'High alch: ${PriceFormat.price(widget.item.highAlch)}',
+                          style: const TextStyle(color: AppTheme.secondaryTextColor),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Alch profit (est.): ${PriceFormat.price(_alchemyProfit().round())}',
+                          style: TextStyle(
+                            color: _alchemyProfit() > 0 ? Colors.green : Colors.redAccent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'assumes fire staff equipped, only nature rune cost',
+                          style: TextStyle(
                             color: AppTheme.secondaryTextColor,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 18),
                 ],
-              ),
-              const SizedBox(height: 20),
-              if (widget.item.highAlch > 0) ...<Widget>[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -931,156 +965,115 @@ class _DetailScreenState extends State<DetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const Text(
-                        'Alchemy',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: <Widget>[
+                          const Text(
+                            'Period change',
+                            style: TextStyle(color: AppTheme.secondaryTextColor),
+                          ),
+                          Text(
+                            '${percentageChange >= 0 ? '+' : ''}${percentageChange.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              color: changeColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (grossMargin != null) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Gross margin: ${PriceFormat.price(grossMargin)}',
+                          style: const TextStyle(color: Colors.white),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'High alch: ${PriceFormat.full(widget.item.highAlch)}',
-                        style: const TextStyle(color: AppTheme.secondaryTextColor),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Alch profit (est.): ${PriceFormat.full(_alchemyProfit().round())} gp',
-                        style: TextStyle(
-                          color: _alchemyProfit() > 0 ? Colors.green : Colors.redAccent,
-                          fontWeight: FontWeight.w700,
+                      ],
+                      if (netMargin != null) ...<Widget>[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Net est.: ${PriceFormat.price(netMargin.round())} ${netMarginPct >= 0 ? '(+${netMarginPct.toStringAsFixed(1)}%)' : '(${netMarginPct.toStringAsFixed(1)}%)'}',
+                          style: TextStyle(
+                            color: netMargin >= 0 ? Colors.green : Colors.redAccent,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'assumes fire staff equipped, only nature rune cost',
-                        style: TextStyle(
-                          color: AppTheme.secondaryTextColor,
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
                 const SizedBox(height: 18),
+                TextButton.icon(
+                  onPressed: _openWiki,
+                  icon: const Icon(Icons.public),
+                  label: const Text('View on wiki'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.accentColor,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SegmentedButton<String>(
+                  segments: _timestepOptions
+                      .map(
+                        (value) => ButtonSegment<String>(
+                          value: value,
+                          label: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  selected: <String>{_selectedTimestep},
+                  onSelectionChanged: (selection) {
+                    setState(() {
+                      _selectedTimestep = selection.first;
+                      _autoYScale = true;
+                      _manualMin = 0;
+                      _manualMax = 0;
+                    });
+                    _loadData();
+                  },
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                      states,
+                    ) {
+                      if (states.contains(WidgetState.selected)) {
+                        return AppTheme.accentColor;
+                      }
+                      return Colors.transparent;
+                    }),
+                    foregroundColor: WidgetStateProperty.resolveWith<Color>((
+                      states,
+                    ) {
+                      if (states.contains(WidgetState.selected)) {
+                        return Colors.black;
+                      }
+                      return Colors.white;
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (_isLoading)
+                  const SizedBox(
+                    height: 260,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: AppTheme.accentColor,
+                      ),
+                    ),
+                  )
+                else if (_errorMessage != null)
+                  SizedBox(
+                    height: 260,
+                    child: Center(
+                      child: Text(
+                        _errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    ),
+                  )
+                else
+                  _buildChart(),
               ],
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.panelColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        const Text(
-                          'Period change',
-                          style: TextStyle(color: AppTheme.secondaryTextColor),
-                        ),
-                        Text(
-                          '${percentageChange >= 0 ? '+' : ''}${percentageChange.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            color: changeColor,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (grossMargin != null) ...<Widget>[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Gross margin: ${PriceFormat.full(grossMargin)} gp',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ],
-                    if (netMargin != null) ...<Widget>[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Net est.: ${PriceFormat.full(netMargin.round())} gp ${netMarginPct >= 0 ? '(+${netMarginPct.toStringAsFixed(1)}%)' : '(${netMarginPct.toStringAsFixed(1)}%)'}',
-                        style: TextStyle(
-                          color: netMargin >= 0 ? Colors.green : Colors.redAccent,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextButton.icon(
-                onPressed: _openWiki,
-                icon: const Icon(Icons.public),
-                label: const Text('View on wiki'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.accentColor,
-                ),
-              ),
-              const SizedBox(height: 18),
-              SegmentedButton<String>(
-                segments: _timestepOptions
-                    .map(
-                      (value) => ButtonSegment<String>(
-                        value: value,
-                        label: Text(value),
-                      ),
-                    )
-                    .toList(),
-                selected: <String>{_selectedTimestep},
-                onSelectionChanged: (selection) {
-                  setState(() {
-                    _selectedTimestep = selection.first;
-                    _autoYScale = true;
-                    _manualMin = 0;
-                    _manualMax = 0;
-                  });
-                  _loadData();
-                },
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith<Color>((
-                    states,
-                  ) {
-                    if (states.contains(WidgetState.selected)) {
-                      return AppTheme.accentColor;
-                    }
-                    return Colors.transparent;
-                  }),
-                  foregroundColor: WidgetStateProperty.resolveWith<Color>((
-                    states,
-                  ) {
-                    if (states.contains(WidgetState.selected)) {
-                      return Colors.black;
-                    }
-                    return Colors.white;
-                  }),
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (_isLoading)
-                const Expanded(
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: AppTheme.accentColor,
-                    ),
-                  ),
-                )
-              else if (_errorMessage != null)
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      _errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  ),
-                )
-              else
-                Expanded(child: _buildChart()),
-            ],
+            ),
           ),
         ),
       ),
