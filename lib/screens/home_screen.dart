@@ -43,10 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     setState(() {
-      _favoriteItemIds = favoriteIds
-          .map(int.tryParse)
-          .whereType<int>()
-          .toSet();
+      _favoriteItemIds = favoriteIds.map(int.tryParse).whereType<int>().toSet();
       _applyFilters();
     });
   }
@@ -114,9 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('GE Prices'),
-      ),
+      appBar: AppBar(title: const Text('GE Prices')),
       body: Column(
         children: <Widget>[
           Padding(
@@ -128,7 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: const InputDecoration(
                 hintText: 'Buscar item...',
                 hintStyle: TextStyle(color: AppTheme.secondaryTextColor),
-                prefixIcon: Icon(Icons.search, color: AppTheme.secondaryTextColor),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: AppTheme.secondaryTextColor,
+                ),
               ),
             ),
           ),
@@ -165,9 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_isLoading)
             const Expanded(
               child: Center(
-                child: CircularProgressIndicator(
-                  color: AppTheme.accentColor,
-                ),
+                child: CircularProgressIndicator(color: AppTheme.accentColor),
               ),
             )
           else if (_errorMessage != null)
@@ -205,37 +201,39 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           else
             Expanded(
-              child: ListView.builder(
-                itemCount: _filteredItems.length,
-                itemBuilder: (context, index) {
-                  final item = _filteredItems[index];
-                  final price = _latestPrices[item.id.toString()];
+              child: RefreshIndicator(
+                onRefresh: _loadData,
+                color: AppTheme.accentColor,
+                child: ListView.builder(
+                  itemCount: _filteredItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _filteredItems[index];
+                    final price = _latestPrices[item.id.toString()];
 
-                  return ItemListTile(
-                    item: item,
-                    price: price,
-                    onTap: () async {
-                      final _ = await Navigator.push(
-                        context,
-                        MaterialPageRoute<void>(
-                          builder: (_) => DetailScreen(
-                            item: item,
-                            currentPrice: price,
+                    return ItemListTile(
+                      item: item,
+                      price: price,
+                      onTap: () async {
+                        final _ = await Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                DetailScreen(item: item, currentPrice: price),
                           ),
-                        ),
-                      );
+                        );
 
-                      if (!mounted) {
-                        return;
-                      }
+                        if (!mounted) {
+                          return;
+                        }
 
-                      await _loadFavorites();
-                      setState(() {
-                        _applyFilters();
-                      });
-                    },
-                  );
-                },
+                        await _loadFavorites();
+                        setState(() {
+                          _applyFilters();
+                        });
+                      },
+                    );
+                  },
+                ),
               ),
             ),
         ],

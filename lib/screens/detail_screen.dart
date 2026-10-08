@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -351,18 +352,25 @@ class _DetailScreenState extends State<DetailScreen> {
                     height: 52,
                     child: widget.item.icon.trim().isEmpty
                         ? const Icon(
-                            Icons.image_not_supported_outlined,
+                            Icons.inventory_2,
                             color: AppTheme.secondaryTextColor,
                           )
-                        : Image.network(
-                            'https://oldschool.runescape.wiki/images/${widget.item.icon.replaceAll(' ', '_')}',
+                        : CachedNetworkImage(
+                            imageUrl:
+                                'https://oldschool.runescape.wiki/images/${widget.item.icon.replaceAll(' ', '_')}',
+                            memCacheWidth: 64,
                             fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(
-                                Icons.image_not_supported_outlined,
+                            placeholder: (context, url) => Container(
+                              color: const Color(0xFF2A2A2A),
+                              child: const Icon(
+                                Icons.inventory_2,
                                 color: AppTheme.secondaryTextColor,
-                              );
-                            },
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => const Icon(
+                              Icons.inventory_2,
+                              color: AppTheme.secondaryTextColor,
+                            ),
                           ),
                   ),
                   const SizedBox(width: 12),

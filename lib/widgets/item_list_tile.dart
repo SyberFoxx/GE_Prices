@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -16,13 +17,22 @@ class ItemListTile extends StatelessWidget {
   final ItemPrice? price;
   final VoidCallback onTap;
 
-  String _formatPrice(int? value) {
+  String _formatCompactPrice(int? value) {
     if (value == null) {
       return '—';
     }
 
-    final formatter = NumberFormat.decimalPattern('en_US');
-    return '${formatter.format(value)} gp';
+    if (value >= 1_000_000) {
+      final formatted = (value / 1_000_000).toStringAsFixed(1);
+      return '${formatted.endsWith('.0') ? formatted.substring(0, formatted.length - 2) : formatted}M';
+    }
+
+    if (value >= 1_000) {
+      final formatted = (value / 1_000).toStringAsFixed(1);
+      return '${formatted.endsWith('.0') ? formatted.substring(0, formatted.length - 2) : formatted}k';
+    }
+
+    return NumberFormat.decimalPattern('en_US').format(value);
   }
 
   @override
@@ -33,7 +43,7 @@ class ItemListTile extends StatelessWidget {
 
     final priceText = price == null
         ? 'Sin datos disponibles'
-        : 'High: ${_formatPrice(price!.high)}\nLow: ${_formatPrice(price!.low)}';
+        : 'High: ${_formatCompactPrice(price!.high)}\nLow: ${_formatCompactPrice(price!.low)}';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -51,15 +61,21 @@ class ItemListTile extends StatelessWidget {
                   Icons.image_not_supported_outlined,
                   color: AppTheme.secondaryTextColor,
                 )
-              : Image.network(
-                  iconUrl,
+              : CachedNetworkImage(
+                  imageUrl: iconUrl,
+                  memCacheWidth: 64,
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.image_not_supported_outlined,
+                  placeholder: (context, url) => Container(
+                    color: const Color(0xFF2A2A2A),
+                    child: const Icon(
+                      Icons.inventory_2,
                       color: AppTheme.secondaryTextColor,
-                    );
-                  },
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => const Icon(
+                    Icons.inventory_2,
+                    color: AppTheme.secondaryTextColor,
+                  ),
                 ),
         ),
         title: Text(
