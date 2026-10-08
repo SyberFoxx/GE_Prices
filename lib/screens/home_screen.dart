@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
@@ -43,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _filteredItems = items;
         _latestPrices = latest.data;
         _isLoading = false;
+        _errorMessage = null;
       });
     } catch (error) {
       if (!mounted) {
@@ -51,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         _isLoading = false;
-        _errorMessage = error.toString();
+        _errorMessage = 'No se pudo cargar la lista de precios. La API de RuneScape Wiki no respondió.';
       });
     }
   }
@@ -68,6 +70,11 @@ class _HomeScreenState extends State<HomeScreen> {
             .toList();
       }
     });
+  }
+
+  String _formatPrice(int value) {
+    final formatter = NumberFormat.decimalPattern('en_US');
+    return '${formatter.format(value)} gp';
   }
 
   @override
@@ -111,11 +118,31 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.redAccent),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.redAccent,
+                        size: 42,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    ],
                   ),
+                ),
+              ),
+            )
+          else if (_filteredItems.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'No se encontraron resultados.',
+                  style: TextStyle(color: AppTheme.secondaryTextColor),
                 ),
               ),
             )
@@ -161,12 +188,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'avgHigh: ${_latestPrices[_selectedItem!.id.toString()]?.avgHigh ?? 'N/A'}',
+                    'avgHigh: ${_formatPrice(_latestPrices[_selectedItem!.id.toString()]?.avgHigh ?? 0)}',
                     style: const TextStyle(color: AppTheme.secondaryTextColor),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'avgLow: ${_latestPrices[_selectedItem!.id.toString()]?.avgLow ?? 'N/A'}',
+                    'avgLow: ${_formatPrice(_latestPrices[_selectedItem!.id.toString()]?.avgLow ?? 0)}',
                     style: const TextStyle(color: AppTheme.secondaryTextColor),
                   ),
                 ],
