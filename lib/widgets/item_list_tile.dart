@@ -1,9 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models/item_price.dart';
 import '../theme/app_theme.dart';
+import '../utils/price_format.dart';
 
 class ItemListTile extends StatelessWidget {
   const ItemListTile({
@@ -17,33 +17,56 @@ class ItemListTile extends StatelessWidget {
   final ItemPrice? price;
   final VoidCallback onTap;
 
-  String _formatCompactPrice(int? value) {
-    if (value == null) {
-      return '—';
-    }
-
-    if (value >= 1_000_000) {
-      final formatted = (value / 1_000_000).toStringAsFixed(1);
-      return '${formatted.endsWith('.0') ? formatted.substring(0, formatted.length - 2) : formatted}M';
-    }
-
-    if (value >= 1_000) {
-      final formatted = (value / 1_000).toStringAsFixed(1);
-      return '${formatted.endsWith('.0') ? formatted.substring(0, formatted.length - 2) : formatted}k';
-    }
-
-    return NumberFormat.decimalPattern('en_US').format(value);
-  }
-
   @override
   Widget build(BuildContext context) {
     final iconUrl = item.icon.trim().isEmpty
         ? null
         : 'https://oldschool.runescape.wiki/images/${item.icon.replaceAll(' ', '_')}';
 
-    final priceText = price == null
-        ? 'Sin datos disponibles'
-        : 'High: ${_formatCompactPrice(price!.high)}\nLow: ${_formatCompactPrice(price!.low)}';
+    final hasSpreadData =
+        price != null &&
+        price!.high != null &&
+        price!.low != null &&
+        price!.high! > 0 &&
+        price!.low! > 0;
+    final spreadText = hasSpreadData
+        ? PriceFormat.marginText(high: price!.high, low: price!.low)
+        : null;
+    final spreadPct = hasSpreadData ? ((price!.high! - price!.low!) / price!.low!) * 100 : 0.0;
+
+    final subtitleChildren = <Widget>[];
+
+    if (price == null) {
+      subtitleChildren.add(
+        const Text(
+          'Sin datos disponibles',
+          style: TextStyle(color: AppTheme.secondaryTextColor),
+        ),
+      );
+    } else {
+      subtitleChildren.add(
+        Text(
+          'High: ${PriceFormat.compact(price!.high)}\nLow: ${PriceFormat.compact(price!.low)}',
+          style: const TextStyle(color: AppTheme.secondaryTextColor),
+        ),
+      );
+
+      if (spreadText != null && spreadText.isNotEmpty) {
+        subtitleChildren.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              spreadText,
+              style: TextStyle(
+                color: spreadPct >= 2 ? Colors.green : AppTheme.secondaryTextColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        );
+      }
+    }
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -85,9 +108,9 @@ class ItemListTile extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        subtitle: Text(
-          priceText,
-          style: const TextStyle(color: AppTheme.secondaryTextColor),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: subtitleChildren,
         ),
         trailing: const Icon(
           Icons.chevron_right,

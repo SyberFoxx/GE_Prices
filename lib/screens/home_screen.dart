@@ -25,7 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<int> _favoriteItemIds = <int>{};
   bool _isLoading = true;
   String? _errorMessage;
-  String _selectedFilter = 'Todos';
+  String _selectedFavoriteFilter = 'Todos';
+  String _selectedMembershipFilter = 'Todos';
 
   @override
   void initState() {
@@ -80,10 +81,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = _searchController.text.trim().toLowerCase();
     var results = _items;
 
-    if (_selectedFilter == 'Favoritos') {
+    if (_selectedFavoriteFilter == 'Favoritos') {
       results = results
           .where((item) => _favoriteItemIds.contains(item.id))
           .toList();
+    }
+
+    if (_selectedMembershipFilter == 'F2P') {
+      results = results.where((item) => !item.members).toList();
+    } else if (_selectedMembershipFilter == 'Members') {
+      results = results.where((item) => item.members).toList();
     }
 
     if (query.isNotEmpty) {
@@ -134,12 +141,12 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: ToggleButtons(
               isSelected: <bool>[
-                _selectedFilter == 'Todos',
-                _selectedFilter == 'Favoritos',
+                _selectedFavoriteFilter == 'Todos',
+                _selectedFavoriteFilter == 'Favoritos',
               ],
               onPressed: (int index) {
                 setState(() {
-                  _selectedFilter = index == 0 ? 'Todos' : 'Favoritos';
+                  _selectedFavoriteFilter = index == 0 ? 'Todos' : 'Favoritos';
                   _applyFilters();
                 });
               },
@@ -157,6 +164,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text('Favoritos'),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <String>['Todos', 'F2P', 'Members']
+                  .map((filter) {
+                    final isSelected = _selectedMembershipFilter == filter;
+                    return ChoiceChip(
+                      label: Text(filter),
+                      selected: isSelected,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedMembershipFilter = filter;
+                          _applyFilters();
+                        });
+                      },
+                      selectedColor: AppTheme.accentColor,
+                      backgroundColor: AppTheme.panelColor,
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.black : Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    );
+                  })
+                  .toList(),
             ),
           ),
           const SizedBox(height: 12),
