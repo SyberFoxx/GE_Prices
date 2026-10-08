@@ -16,26 +16,33 @@ class ItemListTile extends StatelessWidget {
   final ItemPrice? price;
   final VoidCallback onTap;
 
-  String _formatPrice(int value) {
+  String _formatPrice(int? value) {
+    if (value == null) {
+      return '—';
+    }
+
     final formatter = NumberFormat.decimalPattern('en_US');
     return '${formatter.format(value)} gp';
   }
 
   @override
   Widget build(BuildContext context) {
-    final iconUrl = item.icon.isEmpty
+    final iconUrl = item.icon.trim().isEmpty
         ? null
-        : 'https://oldschool.runescape.wiki/images/${Uri.encodeComponent(item.icon)}';
+        : 'https://oldschool.runescape.wiki/images/${item.icon.replaceAll(' ', '_')}';
 
     final priceText = price == null
         ? 'Sin datos disponibles'
-        : 'Avg High: ${_formatPrice(price!.avgHigh)}\nAvg Low: ${_formatPrice(price!.avgLow)}';
+        : 'High: ${_formatPrice(price!.high)}\nLow: ${_formatPrice(price!.low)}';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       color: AppTheme.panelColor,
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 10,
+        ),
         leading: SizedBox(
           width: 40,
           height: 40,
@@ -66,7 +73,10 @@ class ItemListTile extends StatelessWidget {
           priceText,
           style: const TextStyle(color: AppTheme.secondaryTextColor),
         ),
-        trailing: const Icon(Icons.chevron_right, color: AppTheme.secondaryTextColor),
+        trailing: const Icon(
+          Icons.chevron_right,
+          color: AppTheme.secondaryTextColor,
+        ),
         onTap: onTap,
       ),
     );
