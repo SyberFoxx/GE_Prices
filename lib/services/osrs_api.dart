@@ -12,6 +12,7 @@ class OsrsApi {
       'https://prices.runescape.wiki/api/v1/osrs/latest';
   static const String _timeSeriesUrl =
       'https://prices.runescape.wiki/api/v1/osrs/timeseries';
+  static const String _hourlyUrl = 'https://prices.runescape.wiki/api/v1/osrs/1h';
   static const String _userAgent = 'ge_prices-dev - prototipo personal';
 
   Future<List<ItemMapping>> fetchItemMapping() async {
@@ -60,6 +61,29 @@ class OsrsApi {
     }
 
     return LatestPriceResponse.fromJson(decoded);
+  }
+
+  Future<Map<String, HourlyPriceData>> fetchHourly() async {
+    final response = await http.get(
+      Uri.parse(_hourlyUrl),
+      headers: {
+        'User-Agent': _userAgent,
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode != HttpStatus.ok) {
+      throw HttpException(
+        'Error fetching hourly market: ${response.statusCode} ${response.reasonPhrase}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Hourly response is not a map.');
+    }
+
+    return HourlyPriceResponse.fromJson(decoded).data;
   }
 
   Future<List<HistoricalPricePoint>> fetchHistoricalPrices({

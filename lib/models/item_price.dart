@@ -145,3 +145,63 @@ class HistoricalPriceResponse {
     );
   }
 }
+
+class HourlyPriceData {
+  final int avgHighPrice;
+  final int avgLowPrice;
+  final int highPriceVolume;
+  final int lowPriceVolume;
+
+  const HourlyPriceData({
+    required this.avgHighPrice,
+    required this.avgLowPrice,
+    required this.highPriceVolume,
+    required this.lowPriceVolume,
+  });
+
+  factory HourlyPriceData.fromJson(Map<String, dynamic> json) {
+    int toInt(dynamic value) {
+      if (value is num) {
+        return value.toInt();
+      }
+      return 0;
+    }
+
+    return HourlyPriceData(
+      avgHighPrice: toInt(json['avgHighPrice']),
+      avgLowPrice: toInt(json['avgLowPrice']),
+      highPriceVolume: toInt(json['highPriceVolume']),
+      lowPriceVolume: toInt(json['lowPriceVolume']),
+    );
+  }
+}
+
+class HourlyPriceResponse {
+  final int timestamp;
+  final Map<String, HourlyPriceData> data;
+
+  const HourlyPriceResponse({required this.timestamp, required this.data});
+
+  factory HourlyPriceResponse.fromJson(Map<String, dynamic> json) {
+    final rawData = json['data'];
+    final mappedData = <String, HourlyPriceData>{};
+
+    if (rawData is Map) {
+      for (final entry in rawData.entries) {
+        final value = entry.value;
+        if (value is Map) {
+          mappedData[entry.key.toString()] = HourlyPriceData.fromJson(
+            Map<String, dynamic>.from(value),
+          );
+        }
+      }
+    }
+
+    return HourlyPriceResponse(
+      timestamp: json['timestamp'] is num
+          ? (json['timestamp'] as num).toInt()
+          : 0,
+      data: mappedData,
+    );
+  }
+}
