@@ -84,14 +84,15 @@ There is **no backend, no account, and no tracking**. Everything is fetched on d
 - Nature-rune price is resolved live from the item mapping — never hardcoded.
 
 ### 🔔 Alerts & tracking
-- **Local price alerts** (above/below thresholds) delivered through background notifications.
+- **Local price alerts** (above/below thresholds) delivered through background notifications; "below" targets watch the instant-sell price (`low`), and tapping a notification opens the item.
+- **Triggered-alert history** — fired alerts keep a timestamp instead of simply disappearing.
 - **Buy-limit tracker** with the standard 4-hour window per item (manual, since the API doesn't expose your remaining limit).
 
 ### ⭐ Quality of life
 - Local favorites with membership filters and instant search.
 - Dark theme, shimmer skeleton loaders, and honest error states that distinguish a server outage from lost connectivity.
 - **Opens offline** from the last saved prices with an honest "offline / last updated" banner instead of an empty error screen.
-- Pull-to-refresh and Retry actions force a fresh fetch; background auto-refresh stays cache-gated so it never hammers the API.
+- Pull-to-refresh and Retry actions force a fresh fetch (on every tab); background auto-refresh stays cache-gated so it never hammers the API.
 
 ---
 

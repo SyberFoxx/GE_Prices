@@ -23,24 +23,24 @@ Legend: **P0** robustness / correctness, **P1** high-impact features,
 - [x] **RB-2 — Disk cache of mapping / latest / 1h.** Persist the last good
   snapshot so the app can start offline with last-known prices plus an
   "offline / last updated" indicator, instead of an empty error screen.
-- [ ] **RB-3 — Memoize Market / Alch rankings.** `_buildMarketRows`,
+- [x] **RB-3 — Memoize Market / Alch rankings.** `_buildMarketRows`,
   `_buildBuyLimitCapRows` and `_buildAlchemyRows` currently re-iterate and
   re-sort on every `build()` (including every search keystroke, because
   `IndexedStack` keeps all tabs alive).
-- [ ] **RB-4 — Fix "below" price alerts + notification plumbing.** Use the
+- [x] **RB-4 — Fix "below" price alerts + notification plumbing.** Use the
   `low` price for "below" targets (the `high` only ever triggers too late),
   register a notification tap handler that opens the item, and keep a
   triggered-alert history (today a fired alert silently disappears).
-- [ ] **RB-5 — Pull-to-refresh on Market and Alch.** Only the Search tab has
+- [x] **RB-5 — Pull-to-refresh on Market and Alch.** Only the Search tab has
   `RefreshIndicator` today.
-- [ ] **RB-6 — Bump the build number on release.** `pubspec.yaml` is still
+- [x] **RB-6 — Bump the build number on release.** `pubspec.yaml` is still
   `1.0.0+1`; every published build needs a new `+N`.
 
 ## P1 — Features
 
 - [ ] **FT-1 — Volume alerts + favorite alerts.** Alert on unusual volume
   (dump/pump) and allow a target on any favorite, not one item at a time.
-- [ ] **FT-2 — Triggered-alert history.** Show active and fired alerts with
+- [x] **FT-2 — Triggered-alert history.** Show active and fired alerts with
   timestamps.
 - [ ] **FT-3 — 24h % change + trend arrow** on list rows (the metric a flipper
   actually reads).
