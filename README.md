@@ -50,7 +50,7 @@ flowchart LR
 
 ## Data Source & Credits
 
-Price and item-mapping data come from the [OSRS Wiki Real-time Prices API](https://prices.runescape.wiki/) and its [API documentation](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices). Requests currently use the User-Agent configured in `OsrsApi`: `ge_prices-dev - prototipo personal`. The wiki asks API clients to identify themselves with a descriptive User-Agent.
+Price and item-mapping data come from the [OSRS Wiki Real-time Prices API](https://prices.runescape.wiki/) and its [API documentation](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices). Requests use the User-Agent configured in `OsrsApi`: `GEPrices/1.0 (Android; + https://github.com/SyberFoxx/OSRS_pricesEx)`. The wiki asks API clients to identify themselves with a descriptive User-Agent.
 
 Hourly traded volume is reported through data collected with the RuneLite client. It reflects the trades observed by that community data feed, so treat it as a lower-bound indicator rather than a complete count of all Grand Exchange activity. The app currently calls the API's v1 routes; check the documentation for route and schema changes.
 
