@@ -76,6 +76,12 @@ class _DetailScreenState extends State<DetailScreen>
   Timer? _countdownTimer;
   final GlobalKey _chartBoundaryKey = GlobalKey();
 
+  /// Shared between the price chart and the volume chart so pinch-zoom and pan
+  /// stay in sync: both charts show the same x-range, so the crosshair and the
+  /// visible window line up.
+  final TransformationController _chartTransformation =
+      TransformationController();
+
   static const List<String> _timestepOptions = <String>[
     '5m',
     '1h',
@@ -123,9 +129,6 @@ class _DetailScreenState extends State<DetailScreen>
       return;
     }
 
-    final canNotify =
-        await PriceAlertsBackgroundService.requestPermissionOnFirstAlert();
-
     final alert = PriceAlert(
       itemId: widget.item.id,
       itemName: widget.item.name,
@@ -134,6 +137,9 @@ class _DetailScreenState extends State<DetailScreen>
       active: true,
       createdAt: DateTime.now(),
     );
+
+    // Persist first: a notification problem (missing icon, denied permission,
+    // plugin unavailable) must never block the alert from being saved.
     await _alertsService.add(alert);
 
     if (!mounted) {
@@ -146,6 +152,17 @@ class _DetailScreenState extends State<DetailScreen>
     if (sheetContext.mounted) {
       Navigator.pop(sheetContext);
     }
+
+    // Best effort: ask for the notification permission only after the alert is
+    // safely stored.
+    var canNotify = false;
+    try {
+      canNotify =
+          await PriceAlertsBackgroundService.requestPermissionOnFirstAlert();
+    } catch (error) {
+      debugPrint('Price alert saved, but notifications unavailable: $error');
+    }
+
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -282,7 +299,11 @@ class _DetailScreenState extends State<DetailScreen>
                                       direction: direction,
                                       targetText: targetController.text,
                                     );
-                                  } catch (_) {
+                                  } catch (error, stackTrace) {
+                                    debugPrint(
+                                      'Failed to save price alert: $error\n'
+                                      '$stackTrace',
+                                    );
                                     if (sheetContext.mounted) {
                                       setSheetState(() {
                                         isSaving = false;
@@ -366,7 +387,13 @@ class _DetailScreenState extends State<DetailScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
+    _chartTransformation.dispose();
     super.dispose();
+  }
+
+  /// Resets any pinch-zoom/pan so a fresh dataset starts fully zoomed out.
+  void _resetChartZoom() {
+    _chartTransformation.value = Matrix4.identity();
   }
 
   Future<void> _toggleFavorite() async {
@@ -457,6 +484,7 @@ class _DetailScreenState extends State<DetailScreen>
   }
 
   Future<void> _loadData({bool forceRefresh = false}) async {
+    _resetChartZoom();
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -565,6 +593,34 @@ class _DetailScreenState extends State<DetailScreen>
     return math.max(1, (maxY - minY) / 4);
   }
 
+  /// Horizontal pinch-zoom/pan, shared by the price and volume charts.
+  FlTransformationConfig get _chartTransformationConfig =>
+      FlTransformationConfig(
+        scaleAxis: FlScaleAxis.horizontal,
+        minScale: 1,
+        maxScale: 8,
+        panEnabled: true,
+        scaleEnabled: true,
+        transformationController: _chartTransformation,
+      );
+
+  /// Bar geometry that keeps rods from overlapping when many windows share a
+  /// narrow phone screen. Wide enough to look solid, thin enough to fit.
+  ({double rodWidth, double barsSpace}) _barLayout({
+    required double availableWidth,
+    required int groups,
+    required int series,
+  }) {
+    if (groups <= 0) {
+      return (rodWidth: 5, barsSpace: 4);
+    }
+
+    final slot = availableWidth / groups;
+    final barsSpace = (slot * 0.16).clamp(0.0, 6.0);
+    final rodWidth = ((slot - barsSpace) / series).clamp(1.0, 9.0);
+    return (rodWidth: rodWidth, barsSpace: barsSpace);
+  }
+
   String _formatChartAxisLabel(double value, double interval) {
     final magnitude = value.abs();
     if (magnitude < 1000) {
@@ -619,6 +675,7 @@ class _DetailScreenState extends State<DetailScreen>
       _manualMax = 0;
       selectedX = null;
     });
+    _resetChartZoom();
   }
 
   void _openYScaleSheet() {
@@ -946,106 +1003,132 @@ class _DetailScreenState extends State<DetailScreen>
       );
     }
 
-    return SizedBox(
-      height: 80,
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: maxVolume > 0 ? maxVolume * 1.2 : 1,
-          barTouchData: BarTouchData(
-            enabled: true,
-            touchCallback: (FlTouchEvent event, BarTouchResponse? response) {
-              if (response == null) {
-                if (selectedX != null) {
-                  setState(() {
-                    selectedX = null;
-                  });
-                }
-                return;
-              }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Reserve the same 60px left gutter as the price chart so a shared
+        // pinch-zoom/pan keeps both charts aligned window-for-window.
+        final layout = _barLayout(
+          availableWidth: math.max(1.0, constraints.maxWidth - 60),
+          groups: volumes.length,
+          series: 1,
+        );
 
-              final touchedSpot = response.spot;
-              if (touchedSpot == null) {
-                if (selectedX != null) {
-                  setState(() {
-                    selectedX = null;
-                  });
-                }
-                return;
-              }
+        return SizedBox(
+          height: 80,
+          child: BarChart(
+            transformationConfig: _chartTransformationConfig,
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
+              maxY: maxVolume > 0 ? maxVolume * 1.2 : 1,
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchCallback: (FlTouchEvent event, BarTouchResponse? response) {
+                  if (response == null) {
+                    if (selectedX != null) {
+                      setState(() {
+                        selectedX = null;
+                      });
+                    }
+                    return;
+                  }
 
-              final touchedIndex = touchedSpot.touchedBarGroupIndex;
-              if (touchedIndex < 0 || touchedIndex >= points.length) {
-                if (selectedX != null) {
-                  setState(() {
-                    selectedX = null;
-                  });
-                }
-                return;
-              }
+                  final touchedSpot = response.spot;
+                  if (touchedSpot == null) {
+                    if (selectedX != null) {
+                      setState(() {
+                        selectedX = null;
+                      });
+                    }
+                    return;
+                  }
 
-              if (selectedX != touchedIndex) {
-                setState(() {
-                  selectedX = touchedIndex;
-                });
-              }
-            },
-            touchTooltipData: BarTouchTooltipData(
-              tooltipPadding: const EdgeInsets.all(10),
-              fitInsideHorizontally: true,
-              tooltipMargin: 8,
-              tooltipBorder: BorderSide.none,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                final point = points[groupIndex];
-                final volume = volumes[groupIndex];
-                final label = volume == null
-                    ? 'No trades'
-                    : NumberFormat.compact().format(volume);
-                return BarTooltipItem(
-                  '$label\n${_formatDate(point.timestamp)}',
-                  const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
+                  final touchedIndex = touchedSpot.touchedBarGroupIndex;
+                  if (touchedIndex < 0 || touchedIndex >= points.length) {
+                    if (selectedX != null) {
+                      setState(() {
+                        selectedX = null;
+                      });
+                    }
+                    return;
+                  }
+
+                  if (selectedX != touchedIndex) {
+                    setState(() {
+                      selectedX = touchedIndex;
+                    });
+                  }
+                },
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipPadding: const EdgeInsets.all(10),
+                  fitInsideHorizontally: true,
+                  tooltipMargin: 8,
+                  tooltipBorder: BorderSide.none,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final point = points[groupIndex];
+                    final volume = volumes[groupIndex];
+                    final label = volume == null
+                        ? 'No trades'
+                        : NumberFormat.compact().format(volume);
+                    return BarTooltipItem(
+                      '$label\n${_formatDate(point.timestamp)}',
+                      const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+              titlesData: const FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false, reservedSize: 60),
+                ),
+                rightTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+              ),
+              barGroups: List.generate(volumes.length, (index) {
+                final volume = volumes[index];
+                if (volume == null) {
+                  return BarChartGroupData(
+                    x: index,
+                    barsSpace: layout.barsSpace,
+                    barRods: const <BarChartRodData>[],
+                  );
+                }
+
+                final isSelected = selectedX == index;
+                return BarChartGroupData(
+                  x: index,
+                  barsSpace: layout.barsSpace,
+                  barRods: [
+                    BarChartRodData(
+                      toY: volume.toDouble(),
+                      width: layout.rodWidth,
+                      color: isSelected
+                          ? const Color(0xFF9AD8FF)
+                          : const Color(0xFF9AA3B2),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(5),
+                        bottom: Radius.zero,
+                      ),
+                    ),
+                  ],
                 );
-              },
+              }),
             ),
           ),
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          titlesData: const FlTitlesData(show: false),
-          barGroups: List.generate(volumes.length, (index) {
-            final volume = volumes[index];
-            if (volume == null) {
-              return BarChartGroupData(
-                x: index,
-                barsSpace: 4,
-                barRods: const <BarChartRodData>[],
-              );
-            }
-
-            final isSelected = selectedX == index;
-            return BarChartGroupData(
-              x: index,
-              barsSpace: 4,
-              barRods: [
-                BarChartRodData(
-                  toY: volume.toDouble(),
-                  width: 6,
-                  color: isSelected
-                      ? const Color(0xFF9AD8FF)
-                      : const Color(0xFF9AA3B2),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(5),
-                    bottom: Radius.zero,
-                  ),
-                ),
-              ],
-            );
-          }),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1065,122 +1148,136 @@ class _DetailScreenState extends State<DetailScreen>
     final yRange = _resolveYRange(points);
     final minY = _autoYScale ? yRange['min']! : _manualMin;
     final maxY = _autoYScale ? yRange['max']! : _manualMax;
+    final series = (_showHigh ? 1 : 0) + (_showLow ? 1 : 0);
 
-    return SizedBox(
-      height: 260,
-      child: BarChart(
-        BarChartData(
-          minY: minY,
-          maxY: maxY,
-          extraLinesData: ExtraLinesData(
-            verticalLines: selectedX == null
-                ? const <VerticalLine>[]
-                : <VerticalLine>[
-                    VerticalLine(
-                      x: selectedX!.toDouble(),
-                      color: const Color(0xFF7AD3FF).withValues(alpha: 0.65),
-                      strokeWidth: 1.5,
-                      dashArray: [6, 6],
-                    ),
-                  ],
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: _chartAxisInterval(minY, maxY),
-            getDrawingHorizontalLine: (_) =>
-                const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 60,
-                interval: _chartAxisInterval(minY, maxY),
-                getTitlesWidget: (value, meta) {
-                  return Text(
-                    _formatChartAxisLabel(
-                      value,
-                      _chartAxisInterval(minY, maxY),
-                    ),
-                    style: const TextStyle(
-                      color: AppTheme.secondaryTextColor,
-                      fontSize: 10,
-                    ),
-                  );
-                },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The left axis reserves 60px for price labels; size rods to the rest.
+        final layout = _barLayout(
+          availableWidth: math.max(1.0, constraints.maxWidth - 60),
+          groups: points.length,
+          series: series == 0 ? 1 : series,
+        );
+
+        return SizedBox(
+          height: 260,
+          child: BarChart(
+            transformationConfig: _chartTransformationConfig,
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
+              minY: minY,
+              maxY: maxY,
+              extraLinesData: ExtraLinesData(
+                verticalLines: selectedX == null
+                    ? const <VerticalLine>[]
+                    : <VerticalLine>[
+                        VerticalLine(
+                          x: selectedX!.toDouble(),
+                          color: const Color(0xFF7AD3FF).withValues(alpha: 0.65),
+                          strokeWidth: 1.5,
+                          dashArray: [6, 6],
+                        ),
+                      ],
               ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                interval: (points.length - 1) / 3,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= points.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      _formatDate(points[index].timestamp),
-                      style: const TextStyle(
-                        color: AppTheme.secondaryTextColor,
-                        fontSize: 10,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: _chartAxisInterval(minY, maxY),
+                getDrawingHorizontalLine: (_) =>
+                    const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 60,
+                    interval: _chartAxisInterval(minY, maxY),
+                    getTitlesWidget: (value, meta) {
+                      return Text(
+                        _formatChartAxisLabel(
+                          value,
+                          _chartAxisInterval(minY, maxY),
+                        ),
+                        style: const TextStyle(
+                          color: AppTheme.secondaryTextColor,
+                          fontSize: 10,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: (points.length - 1) / 3,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+                      if (index < 0 || index >= points.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _formatDate(points[index].timestamp),
+                          style: const TextStyle(
+                            color: AppTheme.secondaryTextColor,
+                            fontSize: 10,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+              ),
+              barGroups: List.generate(points.length, (index) {
+                final point = points[index];
+                final high = point.avgHighPrice?.toDouble() ?? 0;
+                final low = point.avgLowPrice?.toDouble() ?? 0;
+                final isSelected = selectedX == index;
+
+                return BarChartGroupData(
+                  x: index,
+                  barsSpace: layout.barsSpace,
+                  barRods: <BarChartRodData>[
+                    if (_showHigh)
+                      BarChartRodData(
+                        toY: high,
+                        width: layout.rodWidth,
+                        color: isSelected
+                            ? const Color(0xFF9AD8FF)
+                            : const Color(0xFF7AD3FF),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(4),
+                          bottom: Radius.zero,
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
+                    if (_showLow)
+                      BarChartRodData(
+                        toY: low,
+                        width: layout.rodWidth,
+                        color: isSelected
+                            ? const Color(0xFF9AF7C9)
+                            : const Color(0xFF7CFFB2),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(4),
+                          bottom: Radius.zero,
+                        ),
+                      ),
+                  ],
+                );
+              }),
             ),
           ),
-          barGroups: List.generate(points.length, (index) {
-            final point = points[index];
-            final high = point.avgHighPrice?.toDouble() ?? 0;
-            final low = point.avgLowPrice?.toDouble() ?? 0;
-            final isSelected = selectedX == index;
-
-            return BarChartGroupData(
-              x: index,
-              barsSpace: 4,
-              barRods: <BarChartRodData>[
-                if (_showHigh)
-                  BarChartRodData(
-                    toY: high,
-                    width: 5,
-                    color: isSelected
-                        ? const Color(0xFF9AD8FF)
-                        : const Color(0xFF7AD3FF),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4),
-                      bottom: Radius.zero,
-                    ),
-                  ),
-                if (_showLow)
-                  BarChartRodData(
-                    toY: low,
-                    width: 5,
-                    color: isSelected
-                        ? const Color(0xFF9AF7C9)
-                        : const Color(0xFF7CFFB2),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4),
-                      bottom: Radius.zero,
-                    ),
-                  ),
-              ],
-            );
-          }),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1248,6 +1345,7 @@ class _DetailScreenState extends State<DetailScreen>
     return SizedBox(
       height: 260,
       child: LineChart(
+        transformationConfig: _chartTransformationConfig,
         LineChartData(
           minY: minY,
           maxY: maxY,
@@ -1408,6 +1506,7 @@ class _DetailScreenState extends State<DetailScreen>
                   _chartMode = selection.first;
                   selectedX = null;
                 });
+                _resetChartZoom();
               },
               style: ButtonStyle(
                 backgroundColor: WidgetStateProperty.resolveWith<Color>((
@@ -1429,6 +1528,11 @@ class _DetailScreenState extends State<DetailScreen>
               ),
             ),
             const Spacer(),
+            IconButton(
+              onPressed: _resetChartZoom,
+              icon: const Icon(Icons.zoom_out_map, color: Colors.white),
+              tooltip: 'Reset zoom',
+            ),
             IconButton(
               onPressed: _openYScaleSheet,
               icon: const Icon(Icons.tune, color: Colors.white),
@@ -1480,6 +1584,17 @@ class _DetailScreenState extends State<DetailScreen>
         ),
         const SizedBox(height: 8),
         _buildVolumeChart(),
+        const SizedBox(height: 6),
+        const Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            'Pinch to zoom · drag to pan',
+            style: TextStyle(
+              color: AppTheme.secondaryTextColor,
+              fontSize: 11,
+            ),
+          ),
+        ),
       ],
     );
   }

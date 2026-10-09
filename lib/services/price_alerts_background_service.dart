@@ -30,6 +30,12 @@ class PriceAlertsBackgroundService {
   static const String _channelDescription =
       'Notifications when an item reaches a saved price target.';
 
+  /// Small status-bar icon. Must be a `res/drawable` resource: the Android
+  /// plugin's `initialize` validates the default icon against the *drawable*
+  /// resource type only, so a `mipmap` icon (e.g. `ic_launcher`) throws
+  /// `invalid_icon` and blocks the whole alert flow.
+  static const String _notificationIcon = 'ic_stat_ge_prices';
+
   static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
   static Future<void>? _notificationsInitialization;
@@ -115,8 +121,10 @@ class PriceAlertsBackgroundService {
                 channelId,
                 _channelName,
                 channelDescription: _channelDescription,
+                icon: _notificationIcon,
                 importance: Importance.high,
                 priority: Priority.high,
+                enableVibration: false,
               ),
             ),
           );
@@ -146,7 +154,7 @@ class PriceAlertsBackgroundService {
   static Future<void> _initializeNotifications() async {
     await _notifications.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('ic_launcher'),
+        android: AndroidInitializationSettings(_notificationIcon),
       ),
     );
 
@@ -160,6 +168,9 @@ class PriceAlertsBackgroundService {
         _channelName,
         description: _channelDescription,
         importance: Importance.high,
+        // The manifest removes VIBRATE (see AndroidManifest.xml); keep the
+        // channel consistent so no vibration is requested without the permission.
+        enableVibration: false,
       ),
     );
   }
