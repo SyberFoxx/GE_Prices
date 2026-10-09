@@ -10,8 +10,6 @@
 -->
 <p align="center"><img src="docs/assets/banner.jpeg" alt="GE Prices"/></p>
 
-<h1 align="center">GE Prices</h1>
-
 <p align="center">
   <em>An OSRS Grand Exchange companion for players comparing current prices,<br/>margins, and high-alchemy opportunities.</em>
 </p>
@@ -63,7 +61,7 @@
 - **Alch?** Surface items whose high-alchemy value beats their buy price.
 - **Where is the money?** Estimate the profit ceiling of a single 4-hour buy-limit window.
 
-There is **no backend, no account, and no tracking**. Everything is fetched on demand and cached locally in memory; favorites, alerts, and buy-limit timers are stored only on your device.
+There is **no backend, no account, and no tracking**. Everything is fetched on demand, cached in memory for five minutes, and the last good snapshot is kept on disk so the app can open offline; favorites, alerts, and buy-limit timers are stored only on your device.
 
 ---
 
@@ -92,6 +90,7 @@ There is **no backend, no account, and no tracking**. Everything is fetched on d
 ### ⭐ Quality of life
 - Local favorites with membership filters and instant search.
 - Dark theme, shimmer skeleton loaders, and honest error states that distinguish a server outage from lost connectivity.
+- **Opens offline** from the last saved prices with an honest "offline / last updated" banner instead of an empty error screen.
 - Pull-to-refresh and Retry actions force a fresh fetch; background auto-refresh stays cache-gated so it never hammers the API.
 
 ---
@@ -234,7 +233,7 @@ Hourly traded volume is collected by the **RuneLite** community feed, so it refl
 | App | Flutter / Dart | Cross-platform UI (Android-first) and app logic. |
 | Charts | [`fl_chart`](https://pub.dev/packages/fl_chart) | Historical price charts synchronized with volume. |
 | Networking | [`http`](https://pub.dev/packages/http) | OSRS Wiki API requests. |
-| Caching | In-memory `OsrsApi` cache | 5-minute TTL shared app-wide; no aggressive polling. |
+| Caching | In-memory `OsrsApi` cache + on-disk snapshot | 5-minute TTL shared app-wide; the last good `mapping` / `latest` / `1h` snapshot lets the app open offline. No aggressive polling. |
 | Storage | [`shared_preferences`](https://pub.dev/packages/shared_preferences) | Favorites, alerts, buy-limit timers, refresh preference. |
 | Notifications | [`flutter_local_notifications`](https://pub.dev/packages/flutter_local_notifications) + [`workmanager`](https://pub.dev/packages/workmanager) | Background price alerts (Android). |
 | Images | [`cached_network_image`](https://pub.dev/packages/cached_network_image) | Item icons from the Wiki. |

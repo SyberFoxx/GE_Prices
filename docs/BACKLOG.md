@@ -20,7 +20,7 @@ Legend: **P0** robustness / correctness, **P1** high-impact features,
 
 - [x] **RB-1 — Time out stalled API requests.** Wrap the Wiki HTTP calls in a
   timeout and classify a timeout honestly instead of showing a generic error.
-- [ ] **RB-2 — Disk cache of mapping / latest / 1h.** Persist the last good
+- [x] **RB-2 — Disk cache of mapping / latest / 1h.** Persist the last good
   snapshot so the app can start offline with last-known prices plus an
   "offline / last updated" indicator, instead of an empty error screen.
 - [ ] **RB-3 — Memoize Market / Alch rankings.** `_buildMarketRows`,
