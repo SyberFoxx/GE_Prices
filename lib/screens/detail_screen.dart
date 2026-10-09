@@ -3,11 +3,14 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/item_price.dart';
+import '../models/price_alert.dart';
+import '../services/alerts_service.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
 import '../utils/alchemy_profit.dart';
@@ -37,6 +40,7 @@ class DetailScreen extends StatefulWidget {
 class _DetailScreenState extends State<DetailScreen>
     with WidgetsBindingObserver {
   final OsrsApi _api = OsrsApi();
+  final AlertsService _alertsService = AlertsService();
   static const String _favoriteKey = 'favorite_item_ids';
   static const Duration _timeseriesCacheTtl = Duration(minutes: 5);
 
@@ -54,6 +58,7 @@ class _DetailScreenState extends State<DetailScreen>
   int? selectedX;
   DateTime? _timeseriesCacheAt;
   String? _errorMessage;
+  List<PriceAlert> _activeItemAlerts = <PriceAlert>[];
 
   static const List<String> _timestepOptions = <String>[
     '5m',
@@ -67,7 +72,212 @@ class _DetailScreenState extends State<DetailScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initFavoriteState();
+    _loadItemAlerts();
     _loadData();
+  }
+
+  Future<void> _loadItemAlerts() async {
+    final alerts = await _alertsService.active();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeItemAlerts = alerts
+          .where((alert) => alert.itemId == widget.item.id)
+          .toList();
+    });
+  }
+
+  Future<void> _createPriceAlert({
+    required BuildContext sheetContext,
+    required String direction,
+    required String targetText,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final targetPrice = int.tryParse(targetText.trim());
+    if (targetPrice == null || targetPrice <= 0) {
+      return;
+    }
+
+    final alert = PriceAlert(
+      itemId: widget.item.id,
+      itemName: widget.item.name,
+      targetPrice: targetPrice,
+      direction: direction,
+      active: true,
+      createdAt: DateTime.now(),
+    );
+    await _alertsService.add(alert);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeItemAlerts = <PriceAlert>[..._activeItemAlerts, alert];
+    });
+    if (sheetContext.mounted) {
+      Navigator.pop(sheetContext);
+    }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Price alert saved.')),
+    );
+  }
+
+  Future<void> _removePriceAlert(PriceAlert alert) async {
+    await _alertsService.remove(alert);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _activeItemAlerts.removeWhere(
+        (candidate) =>
+            candidate.itemId == alert.itemId &&
+            candidate.createdAt.isAtSameMomentAs(alert.createdAt),
+      );
+    });
+  }
+
+  Future<void> _openPriceAlertSheet() async {
+    final targetController = TextEditingController();
+    var direction = 'above';
+    var isSaving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'Price alerts',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_activeItemAlerts.isEmpty)
+                        const Text(
+                          'No active alerts for this item.',
+                          style: TextStyle(color: AppTheme.secondaryTextColor),
+                        )
+                      else
+                        ..._activeItemAlerts.map(
+                          (alert) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${alert.direction == 'above' ? 'Above' : 'Below'} ${PriceFormat.price(alert.targetPrice)}',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Delete alert',
+                              onPressed: () async {
+                                await _removePriceAlert(alert);
+                                if (sheetContext.mounted) {
+                                  setSheetState(() {});
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppTheme.secondaryTextColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: targetController,
+                        onChanged: (_) => setSheetState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Target price (gp)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        segments: const <ButtonSegment<String>>[
+                          ButtonSegment<String>(
+                            value: 'above',
+                            label: Text('Above'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'below',
+                            label: Text('Below'),
+                          ),
+                        ],
+                        selected: <String>{direction},
+                        onSelectionChanged: (selection) {
+                          setSheetState(() {
+                            direction = selection.first;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: isSaving ||
+                                  (int.tryParse(targetController.text) ?? 0) <= 0
+                              ? null
+                              : () async {
+                                  setSheetState(() {
+                                    isSaving = true;
+                                  });
+                                  try {
+                                    await _createPriceAlert(
+                                      sheetContext: sheetContext,
+                                      direction: direction,
+                                      targetText: targetController.text,
+                                    );
+                                  } catch (_) {
+                                    if (sheetContext.mounted) {
+                                      setSheetState(() {
+                                        isSaving = false;
+                                      });
+                                      ScaffoldMessenger.of(
+                                        sheetContext,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Could not save the price alert.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: const Text('Set alert'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    targetController.dispose();
   }
 
   Future<void> _initFavoriteState() async {
@@ -1028,6 +1238,29 @@ class _DetailScreenState extends State<DetailScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
+          IconButton(
+            onPressed: _openPriceAlertSheet,
+            tooltip: 'Price alerts',
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                const Icon(Icons.notifications_none),
+                if (_activeItemAlerts.isNotEmpty)
+                  Positioned(
+                    top: -1,
+                    right: -1,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           IconButton(
             onPressed: _openWiki,
             icon: const Icon(Icons.open_in_new),
