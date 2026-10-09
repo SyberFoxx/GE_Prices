@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
+import '../models/price_alert.dart';
 import '../screens/about_screen.dart';
 import '../screens/price_alerts_screen.dart';
+import '../services/alerts_service.dart';
 import '../services/osrs_api.dart';
 import '../services/price_alerts_background_service.dart';
 import '../theme/app_theme.dart';
@@ -133,6 +136,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // hourly timeseries (one request per item, cached 5 min by OsrsApi).
   final Map<int, double> _change24hByItemId = <int, double>{};
   final Set<int> _change24hRequested = <int>{};
+
+  final AlertsService _alertsService = AlertsService();
 
   @override
   void initState() {
@@ -435,6 +440,211 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Sheet to create one price target alert per favorite in one go (FT-1),
+  /// so alerts don't have to be set one item at a time.
+  Future<void> _openFavoriteAlertSheet() async {
+    final targetController = TextEditingController();
+    final favoriteCount = _favoriteItemIds.length;
+    var direction = 'above';
+    var isSaving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'Price alerts on favorites',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Creates one ${direction == 'above' ? 'Above' : 'Below'} '
+                        'alert per favorite ($favoriteCount '
+                        '${favoriteCount == 1 ? 'item' : 'items'}). Existing '
+                        'alerts are not merged.',
+                        style: const TextStyle(
+                          color: AppTheme.secondaryTextColor,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: targetController,
+                        onChanged: (_) => setSheetState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Target price (gp)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        segments: const <ButtonSegment<String>>[
+                          ButtonSegment<String>(
+                            value: 'above',
+                            label: Text('Above'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'below',
+                            label: Text('Below'),
+                          ),
+                        ],
+                        selected: <String>{direction},
+                        onSelectionChanged: (selection) {
+                          setSheetState(() {
+                            direction = selection.first;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed:
+                              isSaving ||
+                                  (int.tryParse(targetController.text) ?? 0) <=
+                                      0
+                              ? null
+                              : () async {
+                                  setSheetState(() {
+                                    isSaving = true;
+                                  });
+                                  try {
+                                    final created = await _createFavoriteAlerts(
+                                      direction: direction,
+                                      targetText: targetController.text,
+                                    );
+                                    if (!sheetContext.mounted) {
+                                      return;
+                                    }
+                                    Navigator.pop(sheetContext);
+                                    await _showFavoriteAlertsSaved(created);
+                                  } catch (error, stackTrace) {
+                                    debugPrint(
+                                      'Failed to save favorite alerts: $error\n'
+                                      '$stackTrace',
+                                    );
+                                    if (sheetContext.mounted) {
+                                      setSheetState(() {
+                                        isSaving = false;
+                                      });
+                                      ScaffoldMessenger.of(
+                                        sheetContext,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Could not save the price alerts.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: const Text('Set alert on favorites'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    targetController.dispose();
+  }
+
+  /// Persists one [PriceAlert] per favorite and returns how many were created.
+  Future<int> _createFavoriteAlerts({
+    required String direction,
+    required String targetText,
+  }) async {
+    final targetPrice = int.tryParse(targetText.trim());
+    if (targetPrice == null || targetPrice <= 0) {
+      return 0;
+    }
+
+    final nameById = <int, String>{
+      for (final item in _items) item.id: item.name,
+    };
+
+    var created = 0;
+    for (final itemId in (_favoriteItemIds.toList()..sort())) {
+      final name = nameById[itemId];
+      if (name == null) {
+        continue;
+      }
+      // Persist first, same as the single-item sheet: a notification problem
+      // must never block the alert from being saved.
+      await _alertsService.add(
+        PriceAlert(
+          itemId: itemId,
+          itemName: name,
+          targetPrice: targetPrice,
+          direction: direction,
+          active: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+      created++;
+    }
+    return created;
+  }
+
+  Future<void> _showFavoriteAlertsSaved(int created) async {
+    if (!mounted || created == 0) {
+      return;
+    }
+
+    final noun = created == 1 ? 'alert' : 'alerts';
+
+    // Best effort: ask for the notification permission only after the alerts
+    // are safely stored.
+    var canNotify = false;
+    try {
+      canNotify = await PriceAlertsBackgroundService
+          .requestPermissionOnFirstAlert();
+    } catch (error) {
+      debugPrint(
+        'Favorite alerts saved, but notifications unavailable: $error',
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          canNotify
+              ? 'Price $noun set for $created favorites.'
+              : 'Price $noun set for $created favorites, but notifications '
+                    'are disabled.',
+        ),
+      ),
+    );
+  }
+
   List<_MarketRow> _buildMarketRows() {
     if (_marketRowsCache != null &&
         identical(_marketRowsCacheItems, _items) &&
@@ -656,6 +866,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             }).toList(),
           ),
         ),
+        if (_selectedFavoriteFilter == 'Favorites' &&
+            _favoriteItemIds.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _openFavoriteAlertSheet,
+                icon: const Icon(
+                  Icons.notifications_active_outlined,
+                  size: 18,
+                ),
+                label: Text(
+                  'Set price target on ${_favoriteItemIds.length} '
+                  'favorite${_favoriteItemIds.length == 1 ? '' : 's'}',
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         if (_isLoading)
           Expanded(

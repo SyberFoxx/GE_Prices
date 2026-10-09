@@ -4,13 +4,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../app_navigation.dart';
+import '../models/item_price.dart';
 import '../models/price_alert.dart';
 import '../services/alerts_service.dart';
+import '../utils/volume_spike.dart';
 import 'osrs_api.dart';
 
 const String _priceAlertTaskName = 'checkPriceAlerts';
 const String _priceAlertWorkName = 'gePricesPriceAlertCheck';
 const String _permissionPromptKey = 'price_alert_permission_prompted';
+const String _favoriteKey = 'favorite_item_ids';
 
 @pragma('vm:entry-point')
 void priceAlertCallbackDispatcher() {
@@ -29,7 +32,16 @@ class PriceAlertsBackgroundService {
   static const String channelId = 'price_alerts';
   static const String _channelName = 'Price alerts';
   static const String _channelDescription =
-      'Notifications when an item reaches a saved price target.';
+      'Notifications when an item reaches a saved price target or a '
+      'favorite shows unusual volume.';
+
+  /// SharedPreferences key for the volume-spike alert toggle (FT-1). Public so
+  /// the Alerts screen can read/write it.
+  static const String volumeSpikeEnabledKey = 'volume_spike_alerts_enabled';
+  static const String _volumeSpikeLastSentPrefix = 'volume_spike_last_sent_';
+  static const int _volumeSpikeMaxFavoritesPerRun = 15;
+  static const double _volumeSpikeMultiplier = 3.0;
+  static const Duration _volumeSpikeCooldown = Duration(hours: 24);
 
   /// Small status-bar icon. Must be a `res/drawable` resource: the Android
   /// plugin's `initialize` validates the default icon against the *drawable*
@@ -131,8 +143,11 @@ class PriceAlertsBackgroundService {
     final alertsService = AlertsService();
 
     try {
+      final preferences = await SharedPreferences.getInstance();
+      final volumeEnabled =
+          preferences.getBool(volumeSpikeEnabledKey) ?? false;
       final alerts = await alertsService.active();
-      if (alerts.isEmpty) {
+      if (alerts.isEmpty && !volumeEnabled) {
         return true;
       }
 
@@ -146,42 +161,48 @@ class PriceAlertsBackgroundService {
         return true;
       }
 
-      final latestPrices = await OsrsApi().fetchLatestPrices();
-      for (final alert in alerts) {
-        final itemPrice = latestPrices.data[alert.itemId.toString()];
-        // "Below" targets watch the instant-sell price (low): using the
-        // instant-buy price (high) would only ever fire after the market had
-        // already moved past the target.
-        final currentPrice = alert.direction == 'above'
-            ? itemPrice?.high
-            : itemPrice?.low;
-        if (currentPrice == null || !alert.isTriggeredBy(currentPrice)) {
-          continue;
-        }
+      if (alerts.isNotEmpty) {
+        final latestPrices = await OsrsApi().fetchLatestPrices();
+        for (final alert in alerts) {
+          final itemPrice = latestPrices.data[alert.itemId.toString()];
+          // "Below" targets watch the instant-sell price (low): using the
+          // instant-buy price (high) would only ever fire after the market had
+          // already moved past the target.
+          final currentPrice = alert.direction == 'above'
+              ? itemPrice?.high
+              : itemPrice?.low;
+          if (currentPrice == null || !alert.isTriggeredBy(currentPrice)) {
+            continue;
+          }
 
-        try {
-          await _notifications.show(
-            id: _notificationId(alert),
-            title:
-                '${alert.itemName} crossed ${_formatPrice(alert.targetPrice)} (now ${_formatPrice(currentPrice)})',
-            body: 'Price target reached.',
-            payload: alert.itemId.toString(),
-            notificationDetails: const NotificationDetails(
-              android: AndroidNotificationDetails(
-                channelId,
-                _channelName,
-                channelDescription: _channelDescription,
-                icon: _notificationIcon,
-                importance: Importance.high,
-                priority: Priority.high,
-                enableVibration: false,
+          try {
+            await _notifications.show(
+              id: _notificationId(alert),
+              title:
+                  '${alert.itemName} crossed ${_formatPrice(alert.targetPrice)} (now ${_formatPrice(currentPrice)})',
+              body: 'Price target reached.',
+              payload: alert.itemId.toString(),
+              notificationDetails: const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  channelId,
+                  _channelName,
+                  channelDescription: _channelDescription,
+                  icon: _notificationIcon,
+                  importance: Importance.high,
+                  priority: Priority.high,
+                  enableVibration: false,
+                ),
               ),
-            ),
-          );
-          await alertsService.markTriggered(alert, DateTime.now());
-        } catch (error) {
-          debugPrint('Price alert notification failed: $error');
+            );
+            await alertsService.markTriggered(alert, DateTime.now());
+          } catch (error) {
+            debugPrint('Price alert notification failed: $error');
+          }
         }
+      }
+
+      if (volumeEnabled) {
+        await _checkVolumeSpikes(preferences);
       }
 
       return true;
@@ -189,6 +210,91 @@ class PriceAlertsBackgroundService {
       // A failed network cycle leaves alerts active for the next 15-minute run.
       debugPrint('Price alert background check failed: $error');
       return true;
+    }
+  }
+
+  /// Notifies once per item per day when a favorite's latest hourly volume is
+  /// [volumeSpikeMultiplier]× its recent average (dump/pump). Bounded to the
+  /// first N favorites so a large watchlist can't turn one 15-minute run into a
+  /// burst of requests.
+  static Future<void> _checkVolumeSpikes(
+    SharedPreferences preferences,
+  ) async {
+    final favoriteIds = (preferences.getStringList(_favoriteKey) ??
+            const <String>[])
+        .map(int.tryParse)
+        .whereType<int>()
+        .toList();
+    if (favoriteIds.isEmpty) {
+      return;
+    }
+
+    final api = OsrsApi();
+    List<ItemMapping> items;
+    try {
+      items = await api.fetchItemMapping();
+    } catch (_) {
+      return;
+    }
+    final nameById = <int, String>{
+      for (final item in items) item.id: item.name,
+    };
+
+    final now = DateTime.now();
+    for (final itemId in favoriteIds.take(_volumeSpikeMaxFavoritesPerRun)) {
+      final lastSentAt = preferences.getInt(
+        '$_volumeSpikeLastSentPrefix$itemId',
+      );
+      if (lastSentAt != null &&
+          now.difference(
+            DateTime.fromMillisecondsSinceEpoch(lastSentAt),
+          ) < _volumeSpikeCooldown) {
+        continue;
+      }
+
+      List<HistoricalPricePoint> points;
+      try {
+        points = await api.fetchHistoricalPrices(
+          itemId: itemId,
+          timestep: '1h',
+        );
+      } catch (_) {
+        // Item without history or offline: skip it this run.
+        continue;
+      }
+
+      final ratio = volumeSpikeRatio(points);
+      if (ratio == null || ratio < _volumeSpikeMultiplier) {
+        continue;
+      }
+
+      try {
+        await _notifications.show(
+          id: 9000 + itemId,
+          title:
+              'Unusual volume: ${nameById[itemId] ?? 'item $itemId'}',
+          body:
+              'Volume is ${ratio.toStringAsFixed(1)}× its recent hourly average.',
+          payload: itemId.toString(),
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              channelId,
+              _channelName,
+              channelDescription: _channelDescription,
+              icon: _notificationIcon,
+              importance: Importance.high,
+              priority: Priority.high,
+              enableVibration: false,
+            ),
+          ),
+        );
+        await preferences.setInt(
+          '$_volumeSpikeLastSentPrefix$itemId',
+          now.millisecondsSinceEpoch,
+        );
+      } catch (error) {
+        debugPrint('Volume spike notification failed: $error');
+      }
     }
   }
 

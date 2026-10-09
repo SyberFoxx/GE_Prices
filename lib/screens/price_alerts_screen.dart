@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
 import '../models/price_alert.dart';
 import '../services/alerts_service.dart';
+import '../services/price_alerts_background_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/price_format.dart';
 import 'detail_screen.dart';
@@ -27,11 +29,60 @@ class _PriceAlertsScreenState extends State<PriceAlertsScreen> {
   List<PriceAlert> _alerts = <PriceAlert>[];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _volumeSpikesEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadAlerts();
+    _loadVolumeSpikeSetting();
+  }
+
+  Future<void> _loadVolumeSpikeSetting() async {
+    final preferences = await SharedPreferences.getInstance();
+    final enabled =
+        preferences.getBool(
+          PriceAlertsBackgroundService.volumeSpikeEnabledKey,
+        ) ??
+        false;
+    if (!mounted) {
+      return;
+    }
+    setState(() => _volumeSpikesEnabled = enabled);
+  }
+
+  Future<void> _toggleVolumeSpikes(bool enabled) async {
+    setState(() => _volumeSpikesEnabled = enabled);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(
+      PriceAlertsBackgroundService.volumeSpikeEnabledKey,
+      enabled,
+    );
+  }
+
+  Widget _buildVolumeSpikeCard() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: AppTheme.panelColor,
+      child: SwitchListTile(
+        title: const Text(
+          'Volume spikes (favorites)',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text(
+          'Notify when a favorite trades at 3×+ its recent hourly average '
+          '(dump/pump). Checked about every 15 min, at most once per day per '
+          'item. Tap the notification to open the item.',
+          style: TextStyle(color: AppTheme.secondaryTextColor),
+        ),
+        value: _volumeSpikesEnabled,
+        activeTrackColor: AppTheme.accentColor,
+        onChanged: _toggleVolumeSpikes,
+      ),
+    );
   }
 
   Future<void> _loadAlerts() async {
@@ -171,59 +222,76 @@ class _PriceAlertsScreenState extends State<PriceAlertsScreen> {
       appBar: AppBar(title: const Text('Price alerts')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.redAccent),
+          : Column(
+              children: <Widget>[
+                _buildVolumeSpikeCard(),
+                Expanded(
+                  child: _errorMessage != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              _errorMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
+                          ),
+                        )
+                      : active.isEmpty && triggered.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(
+                                  Icons.notifications_none,
+                                  color: AppTheme.secondaryTextColor,
+                                  size: 40,
+                                ),
+                                SizedBox(height: 12),
+                                Text(
+                                  'No alerts yet. Open an item and tap the bell '
+                                  'to create one, or enable volume spike alerts '
+                                  'above.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppTheme.secondaryTextColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _loadAlerts,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 16),
+                            children: <Widget>[
+                              if (active.isNotEmpty) ...<Widget>[
+                                _buildSectionHeader('Active'),
+                                ...active.map(
+                                  (alert) => _buildAlertTile(
+                                    alert,
+                                    triggered: false,
+                                  ),
+                                ),
+                              ],
+                              if (triggered.isNotEmpty) ...<Widget>[
+                                _buildSectionHeader('Triggered'),
+                                ...triggered.map(
+                                  (alert) => _buildAlertTile(
+                                    alert,
+                                    triggered: true,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                 ),
-              ),
-            )
-          : active.isEmpty && triggered.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.notifications_none,
-                      color: AppTheme.secondaryTextColor,
-                      size: 40,
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      'No alerts yet. Open an item and tap the bell to create one.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppTheme.secondaryTextColor),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadAlerts,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 16),
-                children: <Widget>[
-                  if (active.isNotEmpty) ...<Widget>[
-                    _buildSectionHeader('Active'),
-                    ...active.map(
-                      (alert) => _buildAlertTile(alert, triggered: false),
-                    ),
-                  ],
-                  if (triggered.isNotEmpty) ...<Widget>[
-                    _buildSectionHeader('Triggered'),
-                    ...triggered.map(
-                      (alert) => _buildAlertTile(alert, triggered: true),
-                    ),
-                  ],
-                ],
-              ),
+              ],
             ),
     );
   }
