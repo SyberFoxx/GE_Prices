@@ -29,5 +29,15 @@ void main() {
       expect(GeTax.netMargin(high: 10000, low: 9000), 800.0);
       expect(GeTax.netMargin(high: 100000000, low: 90000000), 8000000.0);
     });
+
+    test('applies 2% tax per unit and the 5M cap', () {
+      // Spot-check: sell at 110 -> 2.2 gp per unit sold.
+      expect(GeTax.taxOn(salePrice: 110), 2.2);
+      expect(GeTax.taxOn(salePrice: 0), 0);
+      // Below the cap the full 2% applies.
+      expect(GeTax.taxOn(salePrice: 100000000), 2000000.0);
+      // 2% of 300M = 6M, clamped to the 5M cap.
+      expect(GeTax.taxOn(salePrice: 300000000), 5000000.0);
+    });
   });
 }

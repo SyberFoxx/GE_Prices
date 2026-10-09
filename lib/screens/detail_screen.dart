@@ -895,6 +895,19 @@ class _DetailScreenState extends State<DetailScreen>
     quantityController.dispose();
   }
 
+  Future<void> _openFlipCalculator() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return _FlipCalculatorSheet(
+          item: widget.item,
+          currentPrice: widget.currentPrice,
+        );
+      },
+    );
+  }
+
   Widget _buildVolumeChart() {
     final points = _displayPoints;
     if (points.isEmpty) {
@@ -1760,6 +1773,18 @@ class _DetailScreenState extends State<DetailScreen>
                           ),
                         ),
                       ],
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _openFlipCalculator,
+                          icon: const Icon(Icons.calculate),
+                          label: const Text('Flip calculator'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.accentColor,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1863,6 +1888,214 @@ class _DetailScreenState extends State<DetailScreen>
 }
 
 /// Bottom sheet widget for tracking buy limit purchases.
+class _FlipCalculatorSheet extends StatefulWidget {
+  const _FlipCalculatorSheet({
+    required this.item,
+    required this.currentPrice,
+  });
+
+  final ItemMapping item;
+  final ItemPrice? currentPrice;
+
+  @override
+  State<_FlipCalculatorSheet> createState() => _FlipCalculatorSheetState();
+}
+
+class _FlipCalculatorSheetState extends State<_FlipCalculatorSheet> {
+  late final TextEditingController _quantityController;
+  late final TextEditingController _buyController;
+  late final TextEditingController _sellController;
+
+  @override
+  void initState() {
+    super.initState();
+    final limit = widget.item.limit > 0 ? widget.item.limit : 1;
+    final high = widget.currentPrice?.high ?? 1;
+    final low = widget.currentPrice?.low ?? 1;
+    _quantityController = TextEditingController(text: '$limit');
+    _buyController = TextEditingController(text: '$high');
+    _sellController = TextEditingController(text: '$low');
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _buyController.dispose();
+    _sellController.dispose();
+    super.dispose();
+  }
+
+  ({int totalCost, double taxTotal, double netProfit, double roi})?
+      get _calculation {
+    final quantity = int.tryParse(_quantityController.text.trim());
+    final buy = int.tryParse(_buyController.text.trim());
+    final sell = int.tryParse(_sellController.text.trim());
+    if (quantity == null ||
+        buy == null ||
+        sell == null ||
+        quantity <= 0 ||
+        buy <= 0 ||
+        sell <= 0) {
+      return null;
+    }
+
+    final totalCost = quantity * buy;
+    final taxPerUnit = GeTax.taxOn(salePrice: sell);
+    final taxTotal = taxPerUnit * quantity;
+    final netProfit = (sell - taxPerUnit) * quantity - totalCost;
+    final roi = totalCost > 0 ? (netProfit / totalCost) * 100 : 0.0;
+    return (
+      totalCost: totalCost,
+      taxTotal: taxTotal,
+      netProfit: netProfit,
+      roi: roi,
+    );
+  }
+
+  Widget _resultRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: AppTheme.secondaryTextColor),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final calculation = _calculation;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                'Flip calculator',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.item.name,
+                style: const TextStyle(color: AppTheme.secondaryTextColor),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _quantityController,
+                onChanged: (_) => setState(() {}),
+                keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: const InputDecoration(labelText: 'Quantity'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _buyController,
+                onChanged: (_) => setState(() {}),
+                keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: const InputDecoration(labelText: 'Buy price'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _sellController,
+                onChanged: (_) => setState(() {}),
+                keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: const InputDecoration(labelText: 'Sell price'),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.panelColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _resultRow(
+                      'Total cost',
+                      calculation == null
+                          ? '—'
+                          : PriceFormat.price(calculation.totalCost),
+                    ),
+                    _resultRow(
+                      'GE tax (est.)',
+                      calculation == null
+                          ? '—'
+                          : PriceFormat.price(calculation.taxTotal.round()),
+                    ),
+                    _resultRow(
+                      'Net profit',
+                      calculation == null
+                          ? '—'
+                          : PriceFormat.price(calculation.netProfit.round()),
+                      valueColor: calculation == null
+                          ? Colors.white
+                          : (calculation.netProfit >= 0
+                              ? Colors.green
+                              : Colors.redAccent),
+                    ),
+                    _resultRow(
+                      'ROI',
+                      calculation == null
+                          ? '—'
+                          : '${calculation.netProfit >= 0 ? '+' : ''}${calculation.roi.toStringAsFixed(2)}%',
+                      valueColor: calculation == null
+                          ? Colors.white
+                          : (calculation.netProfit >= 0
+                              ? Colors.green
+                              : Colors.redAccent),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'GE tax: 2% of the sale price per unit, capped at 5M gp. '
+                      'Estimates only.',
+                      style: TextStyle(
+                        color: AppTheme.secondaryTextColor,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LimitTrackerSheet extends StatefulWidget {
   const _LimitTrackerSheet({
     required this.item,
