@@ -8,6 +8,7 @@ void main() {
       expect(PriceFormat.compact(1234), '1.2k gp');
       expect(PriceFormat.compact(1234567), '1.2M gp');
       expect(PriceFormat.compact(190), '190 gp');
+      expect(PriceFormat.compactValue(1234567), '1.2M');
     });
 
     test('formats margin with percentage', () {

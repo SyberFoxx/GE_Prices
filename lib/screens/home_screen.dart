@@ -8,6 +8,7 @@ import '../models/item_price.dart';
 import '../screens/about_screen.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import '../utils/alchemy_profit.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/item_tile.dart';
@@ -63,7 +64,7 @@ class _DailyCapRow {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with WidgetsBindingObserver {
+  with WidgetsBindingObserver {
   final OsrsApi _api = OsrsApi();
   final TextEditingController _searchController = TextEditingController();
   static const String _favoriteKey = 'favorite_item_ids';
@@ -88,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen>
   int _autoRefreshSeconds = 0;
   String _selectedFavoriteFilter = 'All';
   String _selectedMembershipFilter = 'All';
+  String _selectedAlchMembershipFilter = 'All';
   int _selectedTab = 0;
 
   @override
@@ -153,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
           return;
         }
-        if (_selectedTab == 0 || _selectedTab == 1) {
+        if (_selectedTab == 0 || _selectedTab == 1 || _selectedTab == 2) {
           _loadData();
         }
       },
@@ -163,16 +165,16 @@ class _HomeScreenState extends State<HomeScreen>
   void _refreshVisibleTabIfNeeded() {
     final now = DateTime.now();
 
-    if (_selectedTab == 1 && (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl)) {
+    if ((_selectedTab == 1 || _selectedTab == 2) && (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl)) {
       _loadData();
       return;
     }
 
     if (_selectedTab == 0) {
-      if (_hourlyCacheAt == null || now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
+        if (_hourlyCacheAt == null || now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
         _loadMarketData();
       }
-      if (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl) {
+        if (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl) {
         _loadData();
       }
     }
@@ -215,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen>
       setState(() {
         _isLoading = false;
         _errorMessage =
-            'Could not load the price list. The RuneScape Wiki API did not respond.';
+          'Could not load the price list. The RuneScape Wiki API did not respond.';
       });
     }
   }
@@ -289,26 +291,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   double _alchemyProfitFor(ItemMapping item) {
-    if (item.highAlch <= 0) {
-      return 0;
-    }
-
-    final currentHigh = _latestPrices[item.id.toString()]?.high ?? 0;
-    if (currentHigh <= 0) {
-      return 0;
-    }
-
-    for (final candidate in _items) {
-      if (candidate.name == 'Nature rune') {
-        final natureRuneLow = _latestPrices[candidate.id.toString()]?.low ?? 0;
-        if (natureRuneLow <= 0) {
-          return 0;
-        }
-        return (item.highAlch - natureRuneLow - currentHigh).toDouble();
-      }
-    }
-
-    return 0;
+    return AlchemyProfit.calculate(
+      item: item,
+      latestPrices: _latestPrices,
+      natureRune: AlchemyProfit.findNatureRune(_items),
+    );
   }
 
   List<_MarketRow> _buildMarketRows() {
@@ -322,12 +309,12 @@ class _HomeScreenState extends State<HomeScreen>
 
       final totalVolume = stat.highPriceVolume + stat.lowPriceVolume;
       final margin = stat.avgHighPrice - stat.avgLowPrice;
-      final pct = stat.avgLowPrice > 0 ? (margin / stat.avgLowPrice) * 100 : 0.0;
+        final pct = stat.avgLowPrice > 0 ? (margin / stat.avgLowPrice) * 100 : 0.0;
       final netMargin = GeTax.netMargin(
         high: stat.avgHighPrice,
         low: stat.avgLowPrice,
       );
-      final netMarginPct = stat.avgLowPrice > 0 ? (netMargin / stat.avgLowPrice) * 100 : 0.0;
+        final netMarginPct = stat.avgLowPrice > 0 ? (netMargin / stat.avgLowPrice) * 100 : 0.0;
 
       rows.add(
         _MarketRow(
@@ -347,18 +334,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   List<_DailyCapRow> _buildDailyCapRows() {
     final rows = <_DailyCapRow>[];
-    final natureRune = _items.firstWhere(
-      (item) => item.name == 'Nature rune',
-      orElse: () => const ItemMapping(
-        id: 0,
-        name: '',
-        examine: '',
-        members: false,
-        limit: 0,
-        icon: '',
-        highAlch: 0,
-      ),
-    );
+    final natureRune = AlchemyProfit.findNatureRune(_items);
 
     for (final item in _items) {
       final limit = item.limit;
@@ -373,13 +349,11 @@ class _HomeScreenState extends State<HomeScreen>
         continue;
       }
 
-      double alchProfit = 0;
-      if (item.highAlch > 0) {
-        final natureRuneLow = _latestPrices[natureRune.id.toString()]?.low ?? 0;
-        if (natureRuneLow > 0) {
-          alchProfit = (item.highAlch - natureRuneLow - currentHigh).toDouble();
-        }
-      }
+      final alchProfit = AlchemyProfit.calculate(
+        item: item,
+        latestPrices: _latestPrices,
+        natureRune: natureRune,
+      );
 
       final netMargin = currentLow > 0
           ? GeTax.netMargin(high: currentHigh, low: currentLow)
@@ -408,6 +382,19 @@ class _HomeScreenState extends State<HomeScreen>
 
     rows.sort((a, b) => b.dailyCap.compareTo(a.dailyCap));
     return rows.take(15).toList();
+  }
+
+  List<AlchemyOpportunity> _buildAlchemyRows() {
+    final members = switch (_selectedAlchMembershipFilter) {
+      'F2P' => false,
+      'Members' => true,
+      _ => null,
+    };
+    return AlchemyProfit.rankedItems(
+      items: _items,
+      latestPrices: _latestPrices,
+      members: members,
+    );
   }
 
   @override
@@ -575,19 +562,170 @@ class _HomeScreenState extends State<HomeScreen>
                     subtitle: price == null
                         ? const Text(
                             'No data available',
-                            style: TextStyle(color: AppTheme.secondaryTextColor),
+                            style: TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                            ),
                           )
                         : Text(
                             'High: ${PriceFormat.compact(price.high)}\nLow: ${PriceFormat.compact(price.low)}',
-                            style: const TextStyle(
-                              color: AppTheme.secondaryTextColor,
-                            ),
+                            style: const TextStyle(color: AppTheme.secondaryTextColor),
                           ),
                   );
                 },
               ),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildAlchemyTab() {
+    if (_isLoading) {
+      return ListView.builder(
+        itemCount: 6,
+        itemBuilder: (context, index) => const ItemRowSkeleton(),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.redAccent),
+          ),
+        ),
+      );
+    }
+
+    final rows = _buildAlchemyRows();
+    return Column(
+      children: <Widget>[
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'High alch value minus nature rune cost. Assumes fire staff equipped.',
+              style: TextStyle(
+                color: AppTheme.secondaryTextColor,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8,
+            children: <String>['All', 'F2P', 'Members'].map((filter) {
+              final isSelected = _selectedAlchMembershipFilter == filter;
+              return ChoiceChip(
+                label: Text(filter),
+                selected: isSelected,
+                onSelected: (_) {
+                  setState(() {
+                    _selectedAlchMembershipFilter = filter;
+                  });
+                },
+                selectedColor: AppTheme.accentColor,
+                backgroundColor: AppTheme.panelColor,
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: rows.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No profitable items found.',
+                    style: TextStyle(color: AppTheme.secondaryTextColor),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: rows.length,
+                  itemBuilder: (context, index) {
+                    final row = rows[index];
+                    final limit = NumberFormat.decimalPattern('en_US')
+                        .format(row.item.limit);
+                    return ItemTile(
+                      item: row.item,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => DetailScreen(
+                              item: row.item,
+                              currentPrice:
+                                  _latestPrices[row.item.id.toString()],
+                              allItems: _items,
+                              latestPrices: _latestPrices,
+                            ),
+                          ),
+                        );
+                      },
+                      title: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              row.item.name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '+${PriceFormat.compactValue(row.dailyPotential.round())}/day',
+                            style: const TextStyle(
+                              color: AppTheme.accentColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Alch: ${PriceFormat.price(row.item.highAlch)}',
+                            style: const TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                            ),
+                          ),
+                          Text(
+                            'Buy: ${PriceFormat.price(row.currentHigh)}',
+                            style: const TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                            ),
+                          ),
+                          Text(
+                            'Profit: ${PriceFormat.price(row.profit.round())}',
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'x$limit/4h',
+                            style: const TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
@@ -887,6 +1025,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final currentTab = <Widget>[
       _buildMarketTab(),
+      _buildAlchemyTab(),
       _buildSearchTab(),
     ];
 
@@ -951,6 +1090,11 @@ class _HomeScreenState extends State<HomeScreen>
             icon: Icon(Icons.trending_up_outlined),
             selectedIcon: Icon(Icons.trending_up),
             label: 'Market',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'Alch',
           ),
           NavigationDestination(
             icon: Icon(Icons.search_outlined),

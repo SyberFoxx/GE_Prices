@@ -14,17 +14,21 @@ class PriceFormat {
       return '—';
     }
 
+    return '${compactValue(value)} gp';
+  }
+
+  static String compactValue(int value) {
     if (value >= 1_000_000) {
       final numericValue = value / 1_000_000;
-      return '${_trimTrailingZeros(numericValue)}M gp';
+      return '${_trimTrailingZeros(numericValue)}M';
     }
 
     if (value >= 1_000) {
       final numericValue = value / 1_000;
-      return '${_trimTrailingZeros(numericValue)}k gp';
+      return '${_trimTrailingZeros(numericValue)}k';
     }
 
-    return '${NumberFormat.decimalPattern('en_US').format(value)} gp';
+    return NumberFormat.decimalPattern('en_US').format(value);
   }
 
   static String full(int? value) => price(value);

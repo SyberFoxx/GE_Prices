@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/item_price.dart';
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import '../utils/alchemy_profit.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/skeletons.dart';
@@ -279,40 +280,13 @@ class _DetailScreenState extends State<DetailScreen>
 
   String _displayPrice(int? value) => PriceFormat.price(value);
 
-  ItemMapping? _findNatureRune() {
-    for (final item in widget.allItems) {
-      if (item.name == 'Nature rune') {
-        return item;
-      }
-    }
-    return null;
-  }
-
   double _alchemyProfit() {
-    if (widget.item.highAlch <= 0) {
-      return 0;
-    }
-
-    final currentHigh =
-        widget.currentPrice?.high ??
-        widget.latestPrices[widget.item.id.toString()]?.high ??
-        0;
-    if (currentHigh <= 0) {
-      return 0;
-    }
-
-    final natureRune = _findNatureRune();
-    if (natureRune == null) {
-      return 0;
-    }
-
-    final natureRuneLow =
-        widget.latestPrices[natureRune.id.toString()]?.low ?? 0;
-    if (natureRuneLow <= 0) {
-      return 0;
-    }
-
-    return (widget.item.highAlch - natureRuneLow - currentHigh).toDouble();
+    return AlchemyProfit.calculate(
+      item: widget.item,
+      latestPrices: widget.latestPrices,
+      natureRune: AlchemyProfit.findNatureRune(widget.allItems),
+      currentHigh: widget.currentPrice?.high,
+    );
   }
 
   void _toggleSeries(String series) {
