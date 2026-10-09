@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Flutter's Gradle plugin forces isShrinkResources = true for release builds.
+  The resource shrinker would strip the notification status-bar icon because it
+  is referenced only from a Dart string (flutter_local_notifications resolves it
+  at runtime with getIdentifier) — invisible to the shrinker. Without this keep
+  rule, release APKs fail to initialize notifications ("invalid_icon") and the
+  alert channel / Workmanager background check silently never work.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_ge_prices" />
