@@ -24,10 +24,13 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
 
   Future<void> _loadStartupData() async {
     try {
-      final mappingRequest = _api.fetchItemMapping();
-      final latestRequest = _api.fetchLatestPrices();
-      final items = await mappingRequest;
-      final latest = await latestRequest;
+      // Wait for both in parallel. Using a parallel wait (instead of awaiting
+      // one then the other) guarantees both futures have an error handler, so a
+      // failing /mapping can never leave /latest as an unhandled async error.
+      final (items, latest) = await (
+        _api.fetchItemMapping(),
+        _api.fetchLatestPrices(),
+      ).wait;
 
       if (!mounted) {
         return;
