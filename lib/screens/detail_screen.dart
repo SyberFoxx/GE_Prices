@@ -176,8 +176,7 @@ class _DetailScreenState extends State<DetailScreen>
 
       setState(() {
         _isLoading = false;
-        _errorMessage =
-            'Could not load the historical chart. Please try again.';
+        _errorMessage = 'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -1297,10 +1296,21 @@ class _DetailScreenState extends State<DetailScreen>
                   SizedBox(
                     height: 260,
                     child: Center(
-                      child: Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.redAccent),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.redAccent),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _loadData,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                          ),
+                        ],
                       ),
                     ),
                   )

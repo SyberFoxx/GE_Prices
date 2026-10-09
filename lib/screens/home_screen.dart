@@ -227,8 +227,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       setState(() {
         _isLoading = false;
-        _errorMessage =
-          'Could not load the price list. The RuneScape Wiki API did not respond.';
+        _errorMessage = 'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -265,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       setState(() {
         _marketLoading = false;
-        _marketError = 'Could not load the market dashboard.';
+        _marketError = 'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -520,6 +519,12 @@ class _HomeScreenState extends State<HomeScreen>
                       _errorMessage!,
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.redAccent),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _loadData,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -778,10 +783,21 @@ class _HomeScreenState extends State<HomeScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            _marketError!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.redAccent),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                _marketError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _loadMarketData,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
           ),
         ),
       );
