@@ -16,6 +16,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ge_prices/main.dart';
 import 'package:ge_prices/screens/about_screen.dart';
@@ -40,6 +41,10 @@ void main() {
   });
 
   setUp(() async {
+    // HomeScreen reads SharedPreferences on mount; without a mock the plugin
+    // channel is missing in tests.
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
     // Start every test with an empty cache. Removing (and not recreating) it
     // keeps the singleton's cached directory path valid while a fresh read
     // simply misses.
@@ -57,14 +62,30 @@ void main() {
     }
   });
 
+  /// Lets the bootstrap network + disk-cache work finish, then rebuilds.
+  ///
+  /// `testWidgets` runs under a fake clock that never advances real `dart:io`
+  /// (the on-disk cache). Each round alternates a fake-async [pump] — which
+  /// drains the awaiting continuations and issues the next file read — with a
+  /// real [runAsync] turn that lets that read actually complete. A handful of
+  /// rounds is plenty for a couple of local temp files.
+  Future<void> settleBootstrap(WidgetTester tester) async {
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 25));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    await tester.pump();
+  }
+
   testWidgets('app boots and shows a dignified error state', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
 
     // Let BootstrapScreen fire its requests and resolve to the server error.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await settleBootstrap(tester);
 
     expect(tester.takeException(), isNull);
     expect(find.text('Server error (HTTP 400)'), findsOneWidget);
@@ -75,7 +96,9 @@ void main() {
     WidgetTester tester,
   ) async {
     final cacheDir = Directory('${supportDir.path}/price_cache');
-    await cacheDir.create(recursive: true);
+    // Synchronous on purpose: real async file I/O does not complete under the
+    // fake clock of testWidgets unless it runs inside tester.runAsync.
+    cacheDir.createSync(recursive: true);
 
     void seed(String key, String body) {
       File('${cacheDir.path}/$key.json').writeAsStringSync(
@@ -116,8 +139,7 @@ void main() {
     );
 
     await tester.pumpWidget(const MyApp());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await settleBootstrap(tester);
 
     expect(tester.takeException(), isNull);
     // HomeScreen (not the error screen) rendered from the cached snapshot.
@@ -127,6 +149,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Server error (HTTP 400)'), findsNothing);
+
+    // cached_network_image's cache manager schedules a one-shot 10s cleanup
+    // timer; let it fire so no timer is left pending when the tree is disposed.
+    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('About screen shows name, version and wiki attribution', (
