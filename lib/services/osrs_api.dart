@@ -13,7 +13,8 @@ class OsrsApi {
   static const String _timeSeriesUrl =
       'https://prices.runescape.wiki/api/v1/osrs/timeseries';
   static const String _hourlyUrl = 'https://prices.runescape.wiki/api/v1/osrs/1h';
-  static const String _userAgent = 'ge_prices-dev - prototipo personal';
+  static const String _userAgent =
+    'GEPrices/1.0 (Android; + https://github.com/SyberFoxx/OSRS_pricesEx)';
 
   Future<List<ItemMapping>> fetchItemMapping() async {
     final response = await http.get(
