@@ -314,6 +314,8 @@ Before a work unit ships, this project checks:
 
 ## Roadmap
 
+High level:
+
 - [x] Local price alerts (Workmanager, ~15 min, one-shot).
 - [x] Buy-limit tracker.
 - [ ] Home-screen widget.
@@ -321,6 +323,8 @@ Before a work unit ships, this project checks:
 - [ ] iOS release polish and device testing.
 - [ ] RuneScape 3 (RS3) data support.
 - [ ] Pro billing / backend push — **blocked pending licensing** (see [Legal Notice](#legal-notice)).
+
+The detailed, prioritized task list lives in **[docs/BACKLOG.md](docs/BACKLOG.md)**.
 
 ---
 
