@@ -14,7 +14,9 @@ import '../utils/alchemy_profit.dart';
 import '../utils/fetch_errors.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
+import '../utils/price_change.dart';
 import '../widgets/item_tile.dart';
+import '../widgets/price_change_badge.dart';
 import '../widgets/skeletons.dart';
 import '../widgets/updated_badge.dart';
 import 'detail_screen.dart';
@@ -126,6 +128,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   ItemMapping? _natureRune;
   List<ItemMapping>? _natureRuneCacheItems;
+
+  // 24h % change (FT-3) for the most-traded rows, fetched lazily from the
+  // hourly timeseries (one request per item, cached 5 min by OsrsApi).
+  final Map<int, double> _change24hByItemId = <int, double>{};
+  final Set<int> _change24hRequested = <int>{};
 
   @override
   void initState() {
@@ -386,6 +393,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       latestPrices: _latestPrices,
       natureRune: _natureRuneFor(),
     );
+  }
+
+  /// Fetches the 24h % change for [itemIds] (most-traded rows) in parallel and
+  /// renders it via the ▲/▼ badge. Best effort: missing/failed items just keep
+  /// the "—" badge; results are cached per item id so rebuilds don't refetch.
+  Future<void> _loadChange24h(Iterable<int> itemIds) async {
+    final missing = itemIds.where(
+      (id) => !_change24hRequested.contains(id),
+    );
+    if (missing.isEmpty) {
+      return;
+    }
+    _change24hRequested.addAll(missing);
+
+    final results = await Future.wait<MapEntry<int, double?>>(
+      missing.map((id) async {
+        double? percent;
+        try {
+          final points = await _api.fetchHistoricalPrices(
+            itemId: id,
+            timestep: '1h',
+          );
+          percent = percentChange24h(points);
+        } catch (_) {
+          // Offline or an item without history: the badge stays "—".
+        }
+        return MapEntry<int, double?>(id, percent);
+      }),
+    );
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      for (final entry in results) {
+        if (entry.value != null) {
+          _change24hByItemId[entry.key] = entry.value!;
+        }
+      }
+    });
   }
 
   List<_MarketRow> _buildMarketRows() {
@@ -928,6 +975,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final rows = _buildMarketRows();
     final topVolume = rows.take(20).toList();
+
+    // 24h % change badge for the most-traded rows — lazy per-item timeseries,
+    // cached by OsrsApi so rebuilds never refetch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadChange24h(topVolume.map((row) => row.item.id));
+    });
     final bestMargins =
         rows
             .where(
@@ -979,7 +1032,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            trailing: const SizedBox.shrink(),
+            trailing: PriceChangeBadge(_change24hByItemId[row.item.id]),
           );
         }),
         _buildSectionHeader('Best margins (1h)'),
@@ -1219,6 +1272,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Refreshes both the item list / latest prices and the hourly market data.
   /// Used by the offline banner's Retry and by pull-to-refresh.
   Future<void> _refreshAll() async {
+    // Drop the cached 24h badges so a forced refresh re-fetches fresh series.
+    _change24hByItemId.clear();
+    _change24hRequested.clear();
     await Future.wait<void>(<Future<void>>[
       _loadData(forceRefresh: true),
       _loadMarketData(forceRefresh: true),
