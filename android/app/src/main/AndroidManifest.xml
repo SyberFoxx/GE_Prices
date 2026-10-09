@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Needed for local price alerts on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Chained AlarmManager price checks: RECEIVE_BOOT_COMPLETED lets the
+         plugin re-arm the 15-minute alarm after a reboot (rescheduleOnReboot);
+         WAKE_LOCK lets the alarm wake the device to run the check (wakeup). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- flutter_local_notifications injects VIBRATE unconditionally; our
          notifications are silent (no vibrationPattern), so drop it. -->
     <uses-permission
@@ -42,6 +47,25 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- android_alarm_manager_plus: AlarmService runs the 15-minute alert
+             check even when the app is closed; AlarmBroadcastReceiver receives
+             the alarm; RebootBroadcastReceiver re-arms persisted alarms after a
+             reboot (kept disabled until the plugin enables it on demand). -->
+        <service
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+        <receiver
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

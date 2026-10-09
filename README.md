@@ -84,9 +84,9 @@ There is **no backend, no account, and no tracking**. Everything is fetched on d
 - Nature-rune price is resolved live from the item mapping — never hardcoded.
 
 ### 🔔 Alerts & tracking
-- **Local price alerts** (above/below thresholds) delivered through background notifications; "below" targets watch the instant-sell price (`low`), and tapping a notification opens the item.
+- **Local price alerts** (above/below thresholds) delivered through background notifications; "below" targets watch the instant-sell price (`low`), and tapping a notification opens the item. Checks run on a chained 15-minute AlarmManager alarm with a WorkManager fallback (both one-shot, idempotent), plus a foreground reconcile so alerts crossed while the system deferred background work notify as soon as the app is opened.
 - **Triggered-alert history** — fired alerts keep a timestamp instead of simply disappearing.
-- **Volume-spike alerts** (optional): a favorite trading at **3×+ its recent hourly volume** (dump/pump) pings once per day per item; the check runs with the same ~15-minute Workmanager cycle.
+- **Volume-spike alerts** (optional): a favorite trading at **3×+ its recent hourly volume** (dump/pump) pings once per day per item; the check runs on the same ~15-minute background cycle as price alerts.
 - **Set a price target on all favorites at once** from the Search tab's Favorites filter — one sheet creates an above/below alert per favorite.
 - **Buy-limit tracker** with the standard 4-hour window per item (manual, since the API doesn't expose your remaining limit).
 
@@ -188,7 +188,7 @@ ge_prices/
 │   ├── services/
 │   │   ├── osrs_api.dart       # Wiki API client + shared 5-minute cache
 │   │   ├── alerts_service.dart # Local price-alert persistence
-│   │   ├── price_alerts_background_service.dart  # Workmanager notifications
+│   │   ├── price_alerts_background_service.dart  # AlarmManager + WorkManager notifications
 │   │   └── limit_service.dart  # Buy-limit window persistence
 │   ├── theme/                  # Dark theme
 │   ├── utils/                  # ge_tax, alchemy_profit, price_format, fetch_errors
@@ -239,7 +239,7 @@ Hourly traded volume is collected by the **RuneLite** community feed, so it refl
 | Networking | [`http`](https://pub.dev/packages/http) | OSRS Wiki API requests. |
 | Caching | In-memory `OsrsApi` cache + on-disk snapshot | 5-minute TTL shared app-wide; the last good `mapping` / `latest` / `1h` snapshot lets the app open offline. No aggressive polling. |
 | Storage | [`shared_preferences`](https://pub.dev/packages/shared_preferences) | Favorites, alerts, buy-limit timers, refresh preference. |
-| Notifications | [`flutter_local_notifications`](https://pub.dev/packages/flutter_local_notifications) + [`workmanager`](https://pub.dev/packages/workmanager) | Background price alerts (Android). |
+| Notifications | [`flutter_local_notifications`](https://pub.dev/packages/flutter_local_notifications) + [`android_alarm_manager_plus`](https://pub.dev/packages/android_alarm_manager_plus) + [`workmanager`](https://pub.dev/packages/workmanager) | Background price alerts (Android). AlarmManager chain plus WorkManager fallback. |
 | Images | [`cached_network_image`](https://pub.dev/packages/cached_network_image) | Item icons from the Wiki. |
 | Polish | [`shimmer`](https://pub.dev/packages/shimmer) | Skeleton loaders. |
 | Platform | [`package_info_plus`](https://pub.dev/packages/package_info_plus), [`path_provider`](https://pub.dev/packages/path_provider), [`url_launcher`](https://pub.dev/packages/url_launcher), [`share_plus`](https://pub.dev/packages/share_plus) | App version, file paths, external links, sharing. |
@@ -310,7 +310,7 @@ Before a work unit ships, this project checks:
 1. `flutter analyze` is clean.
 2. `flutter test` is green (utils/services unit tests + app smoke tests).
 3. UI/logic changes are exercised with `flutter run -d linux`.
-4. Android-only features (notifications, Workmanager, touch, ~360 dp layout, BottomSheets) are verified on a real device.
+4. Android-only features (notifications incl. AlarmManager/WorkManager background checks and tap-to-open, touch, ~360 dp layout, BottomSheets) are verified on a real device.
 5. Edge cases hold up: no internet shows a dignified error and never crashes; items with no trades render nulls/`—`; items without a high-alch value or buy limit degrade gracefully; favorites persist after the app is closed.
 
 ---
@@ -319,7 +319,7 @@ Before a work unit ships, this project checks:
 
 High level:
 
-- [x] Local price alerts (Workmanager, ~15 min, one-shot).
+- [x] Local price alerts (AlarmManager 15-min chain + WorkManager fallback, one-shot, foreground reconcile).
 - [x] Buy-limit tracker.
 - [ ] Home-screen widget.
 - [ ] English / Spanish localization (`gen-l10n`).

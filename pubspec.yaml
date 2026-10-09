@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  android_alarm_manager_plus: ^5.1.2
   cached_network_image: ^4.0.4
   fl_chart: ^1.2.0
   flutter:

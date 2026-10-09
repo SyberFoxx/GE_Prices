@@ -1,3 +1,4 @@
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,12 @@ const String _priceAlertWorkName = 'gePricesPriceAlertCheck';
 const String _permissionPromptKey = 'price_alert_permission_prompted';
 const String _favoriteKey = 'favorite_item_ids';
 
+/// Stable id for the chained AlarmManager one-shot that runs each background
+/// price check. Passing the same id replaces any pending alarm, so re-arming is
+/// always idempotent.
+const int _priceAlarmId = 0x6a4552;
+const Duration _alertCheckInterval = Duration(minutes: 15);
+
 @pragma('vm:entry-point')
 void priceAlertCallbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
@@ -24,6 +31,15 @@ void priceAlertCallbackDispatcher() {
 
     return PriceAlertsBackgroundService.checkActiveAlerts();
   });
+}
+
+/// Runs in the AlarmManager background isolate (app may be closed). Checks the
+/// alerts and then re-arms the next 15-minute alarm so the chain survives
+/// without the app ever needing to be opened.
+@pragma('vm:entry-point')
+Future<void> priceAlarmCallbackDispatcher() async {
+  await PriceAlertsBackgroundService.checkActiveAlerts();
+  await PriceAlertsBackgroundService.scheduleNextAlertCheck();
 }
 
 class PriceAlertsBackgroundService {
@@ -87,6 +103,54 @@ class PriceAlertsBackgroundService {
       frequency: const Duration(minutes: 15),
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
+
+    // WorkManager alone is heavily deferred by OEM battery managers, so also run
+    // a chained AlarmManager check. Both trigger the same idempotent check, so
+    // whichever fires first wins and the other is a harmless no-op.
+    try {
+      await AndroidAlarmManager.initialize();
+      await scheduleNextAlertCheck();
+    } catch (error) {
+      debugPrint('AlarmManager price checks unavailable: $error');
+    }
+  }
+
+  /// Arms (or re-arms) the next background alert check as a chained one-shot
+  /// alarm. Inexact but `allowWhileIdle`+`wakeup` so it keeps firing through
+  /// Doze and is respected by OEMs far more than a WorkManager job; persisted
+  /// across reboots. Re-armed after every run by [priceAlarmCallbackDispatcher].
+  static Future<void> scheduleNextAlertCheck() async {
+    if (!isAndroid) {
+      return;
+    }
+
+    try {
+      await AndroidAlarmManager.oneShot(
+        _alertCheckInterval,
+        _priceAlarmId,
+        priceAlarmCallbackDispatcher,
+        allowWhileIdle: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+      );
+    } catch (error) {
+      debugPrint('Could not schedule the next alert check: $error');
+    }
+  }
+
+  /// Runs a foreground check when the app opens or returns to the foreground.
+  /// Guarantees that alerts crossed while the background check was deferred by
+  /// the system still notify the moment the user is looking at the app.
+  static Future<void> reconcileNow() async {
+    if (!isAndroid) {
+      return;
+    }
+
+    try {
+      await checkActiveAlerts();
+    } catch (error) {
+      debugPrint('Foreground alert reconcile failed: $error');
+    }
   }
 
   /// Opens the item a notification launched the app for, if any. Retries until

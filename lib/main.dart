@@ -12,8 +12,22 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     unawaited(_initializePriceAlertsSafely());
+    WidgetsBinding.instance.addObserver(_ForegroundAlertReconciler());
   }
   runApp(const MyApp());
+}
+
+/// Reconciles price alerts whenever the app returns to the foreground: alerts
+/// crossed while the system deferred the background check are notified right
+/// away instead of staying silent until the next 15-minute run.
+class _ForegroundAlertReconciler with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    unawaited(PriceAlertsBackgroundService.reconcileNow());
+  }
 }
 
 Future<void> _initializePriceAlertsSafely() async {
@@ -22,6 +36,9 @@ Future<void> _initializePriceAlertsSafely() async {
     // A notification tap that launched the app opens its item once the
     // navigator exists.
     unawaited(PriceAlertsBackgroundService.openPendingLaunchItem());
+    // Deterministic foreground check on cold start, independent of the
+    // lifecycle-observer timing above.
+    unawaited(PriceAlertsBackgroundService.reconcileNow());
   } catch (error) {
     debugPrint('Background price alerts unavailable: $error');
   }
