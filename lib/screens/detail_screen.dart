@@ -909,17 +909,16 @@ class _DetailScreenState extends State<DetailScreen>
       );
     }
 
-    final volumes = <double?>[];
+    // Real traded units per window (high-side + low-side), not price spread.
+    final volumes = <int?>[];
     for (final point in points) {
-      final high = point.avgHighPrice ?? 0;
-      final low = point.avgLowPrice ?? 0;
-      final spread = (high - low).abs();
-      volumes.add(spread > 0 ? spread.toDouble() : null);
+      final total = (point.highPriceVolume ?? 0) + (point.lowPriceVolume ?? 0);
+      volumes.add(total > 0 ? total : null);
     }
 
-    final maxVolume = volumes.whereType<double>().fold<double>(
+    final maxVolume = volumes.whereType<int>().fold<int>(
       0,
-      (double acc, double value) => value > acc ? value : acc,
+      (int acc, int value) => value > acc ? value : acc,
     );
 
     if (maxVolume <= 0) {
@@ -988,7 +987,7 @@ class _DetailScreenState extends State<DetailScreen>
                 final volume = volumes[groupIndex];
                 final label = volume == null
                     ? 'No trades'
-                    : NumberFormat.compact().format(volume.round());
+                    : NumberFormat.compact().format(volume);
                 return BarTooltipItem(
                   '$label\n${_formatDate(point.timestamp)}',
                   const TextStyle(
@@ -1019,7 +1018,7 @@ class _DetailScreenState extends State<DetailScreen>
               barsSpace: 4,
               barRods: [
                 BarChartRodData(
-                  toY: volume,
+                  toY: volume.toDouble(),
                   width: 6,
                   color: isSelected
                       ? const Color(0xFF9AD8FF)
@@ -1458,7 +1457,7 @@ class _DetailScreenState extends State<DetailScreen>
         const Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            'Volume',
+            'Volume (units)',
             style: TextStyle(
               color: AppTheme.secondaryTextColor,
               fontSize: 12,

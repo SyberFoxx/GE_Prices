@@ -103,11 +103,15 @@ class HistoricalPricePoint {
   final int timestamp;
   final int? avgHighPrice;
   final int? avgLowPrice;
+  final int? highPriceVolume;
+  final int? lowPriceVolume;
 
   const HistoricalPricePoint({
     required this.timestamp,
     required this.avgHighPrice,
     required this.avgLowPrice,
+    this.highPriceVolume,
+    this.lowPriceVolume,
   });
 
   factory HistoricalPricePoint.fromJson(Map<String, dynamic> json) {
@@ -124,6 +128,8 @@ class HistoricalPricePoint {
           : 0,
       avgHighPrice: toIntOrNull(json['avgHighPrice']),
       avgLowPrice: toIntOrNull(json['avgLowPrice']),
+      highPriceVolume: toIntOrNull(json['highPriceVolume']),
+      lowPriceVolume: toIntOrNull(json['lowPriceVolume']),
     );
   }
 }
