@@ -74,8 +74,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   static const String _favoriteKey = 'favorite_item_ids';
   static const String _autoRefreshKey = 'auto_refresh_seconds';
-  static const Duration _hourlyCacheTtl = Duration(minutes: 5);
-  static const Duration _latestCacheTtl = Duration(minutes: 5);
   static const int _minimumMarketVolume = 500;
   static const int _minimumAvgLow = 100;
 
@@ -83,8 +81,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<ItemMapping> _filteredItems = <ItemMapping>[];
   Map<String, ItemPrice> _latestPrices = <String, ItemPrice>{};
   Map<String, HourlyPriceData> _hourlyData = <String, HourlyPriceData>{};
-  DateTime? _latestCacheAt;
-  DateTime? _hourlyCacheAt;
   Timer? _autoRefreshTimer;
   Set<int> _favoriteItemIds = <int>{};
   bool _isLoading = true;
@@ -106,7 +102,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (widget.initialItems != null && widget.initialLatestPrices != null) {
       _items = widget.initialItems!;
       _latestPrices = widget.initialLatestPrices!;
-      _latestCacheAt = DateTime.now();
       _isLoading = false;
       _applyFilters();
     } else {
@@ -168,9 +163,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;
       }
-      if (_selectedTab == 0 || _selectedTab == 1 || _selectedTab == 2) {
-        _loadData();
-      }
+      // Let the TTL-gated refresh decide so auto-refresh never bypasses the
+      // 5-minute cache (reasonable wiki API usage).
+      _refreshVisibleTabIfNeeded();
     });
   }
 
@@ -178,19 +173,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final now = DateTime.now();
 
     if ((_selectedTab == 1 || _selectedTab == 2) &&
-        (_latestCacheAt == null ||
-            now.difference(_latestCacheAt!) > _latestCacheTtl)) {
+        (_api.latestCacheAt == null ||
+            now.difference(_api.latestCacheAt!) > OsrsApi.cacheTtl)) {
       _loadData();
       return;
     }
 
     if (_selectedTab == 0) {
-      if (_hourlyCacheAt == null ||
-          now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
+      if (_api.hourlyCacheAt == null ||
+          now.difference(_api.hourlyCacheAt!) > OsrsApi.cacheTtl) {
         _loadMarketData();
       }
-      if (_latestCacheAt == null ||
-          now.difference(_latestCacheAt!) > _latestCacheTtl) {
+      if (_api.latestCacheAt == null ||
+          now.difference(_api.latestCacheAt!) > OsrsApi.cacheTtl) {
         _loadData();
       }
     }
@@ -208,10 +203,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _autoRefreshTimer = null;
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool forceRefresh = false}) async {
     try {
-      final items = await _api.fetchItemMapping();
-      final latest = await _api.fetchLatestPrices();
+      final items = await _api.fetchItemMapping(forceRefresh: forceRefresh);
+      final latest = await _api.fetchLatestPrices(forceRefresh: forceRefresh);
 
       if (!mounted) {
         return;
@@ -220,7 +215,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _items = items;
         _latestPrices = latest.data;
-        _latestCacheAt = DateTime.now();
         _isLoading = false;
         _errorMessage = null;
         _applyFilters();
@@ -238,21 +232,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _loadMarketData() async {
-    final now = DateTime.now();
-    if (_hourlyCacheAt != null &&
-        now.difference(_hourlyCacheAt!) < _hourlyCacheTtl &&
-        _hourlyData.isNotEmpty) {
-      return;
-    }
-
+  Future<void> _loadMarketData({bool forceRefresh = false}) async {
     setState(() {
       _marketLoading = true;
       _marketError = null;
     });
 
     try {
-      final hourly = await _api.fetchHourly();
+      final hourly = await _api.fetchHourly(forceRefresh: forceRefresh);
 
       if (!mounted) {
         return;
@@ -260,7 +247,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _hourlyData = hourly;
-        _hourlyCacheAt = now;
         _marketLoading = false;
       });
     } catch (error) {
@@ -534,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 8),
                     TextButton.icon(
-                      onPressed: _loadData,
+                      onPressed: () => _loadData(forceRefresh: true),
                       icon: const Icon(Icons.refresh),
                       label: const Text('Retry'),
                     ),
@@ -555,7 +541,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         else
           Expanded(
             child: RefreshIndicator(
-              onRefresh: _loadData,
+              onRefresh: () => _loadData(forceRefresh: true),
               color: AppTheme.accentColor,
               child: ListView.builder(
                 itemCount: _filteredItems.length,
@@ -807,7 +793,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: _loadMarketData,
+                onPressed: () => _loadMarketData(forceRefresh: true),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
               ),
@@ -1083,8 +1069,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.only(right: 8),
             child: UpdatedBadge(
               lastUpdated: _selectedTab == 0
-                  ? (_hourlyCacheAt ?? _latestCacheAt)
-                  : _latestCacheAt,
+                  ? (_api.hourlyCacheAt ?? _api.latestCacheAt)
+                  : _api.latestCacheAt,
             ),
           ),
           if (PriceAlertsBackgroundService.isAndroid)

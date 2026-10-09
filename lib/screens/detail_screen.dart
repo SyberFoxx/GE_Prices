@@ -455,7 +455,7 @@ class _DetailScreenState extends State<DetailScreen>
     }
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool forceRefresh = false}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -469,6 +469,7 @@ class _DetailScreenState extends State<DetailScreen>
       final points = await _api.fetchHistoricalPrices(
         itemId: widget.item.id,
         timestep: _selectedTimestep,
+        forceRefresh: forceRefresh,
       );
 
       if (!mounted) {
@@ -1840,7 +1841,7 @@ class _DetailScreenState extends State<DetailScreen>
                           ),
                           const SizedBox(height: 8),
                           TextButton.icon(
-                            onPressed: _loadData,
+                            onPressed: () => _loadData(forceRefresh: true),
                             icon: const Icon(Icons.refresh),
                             label: const Text('Retry'),
                           ),
