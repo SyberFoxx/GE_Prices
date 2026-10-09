@@ -1,12 +1,17 @@
 import 'dart:math' as math;
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -68,6 +73,7 @@ class _DetailScreenState extends State<DetailScreen>
   List<PriceAlert> _activeItemAlerts = <PriceAlert>[];
   LimitEntry? _currentLimitEntry;
   Timer? _countdownTimer;
+  final GlobalKey _chartBoundaryKey = GlobalKey();
 
   static const List<String> _timestepOptions = <String>[
     '5m',
@@ -386,6 +392,52 @@ class _DetailScreenState extends State<DetailScreen>
     setState(() {
       _isFavorite = !_isFavorite;
     });
+  }
+
+  Future<void> _shareChart() async {
+    try {
+      final boundary = _chartBoundaryKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not capture chart')),
+        );
+        return;
+      }
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not encode image')),
+        );
+        return;
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/ge_chart_${widget.item.id}.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+
+      final highPrice = widget.currentPrice?.high ?? 0;
+      final lowPrice = widget.currentPrice?.low ?? 0;
+      final text = 'GE Prices - ${widget.item.name}: High ${PriceFormat.price(highPrice)} / Low ${PriceFormat.price(lowPrice)}';
+
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: text,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // On desktop or if share fails
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Sharing available on mobile'),
+          backgroundColor: AppTheme.panelColor,
+        ),
+      );
+    }
   }
 
   Future<void> _openWiki() async {
@@ -1489,6 +1541,11 @@ class _DetailScreenState extends State<DetailScreen>
               color: _isFavorite ? Colors.amber : Colors.white,
             ),
           ),
+          IconButton(
+            onPressed: _shareChart,
+            icon: const Icon(Icons.share),
+            tooltip: 'Share chart',
+          ),
         ],
       ),
       body: SafeArea(
@@ -1792,7 +1849,10 @@ class _DetailScreenState extends State<DetailScreen>
                     ),
                   )
                 else
-                  _buildChart(),
+                  RepaintBoundary(
+                    key: _chartBoundaryKey,
+                    child: _buildChart(),
+                  ),
               ],
             ),
           ),
