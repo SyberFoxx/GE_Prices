@@ -783,81 +783,86 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     style: TextStyle(color: AppTheme.secondaryTextColor),
                   ),
                 )
-              : ListView.builder(
-                  itemCount: rows.length,
-                  itemBuilder: (context, index) {
-                    final row = rows[index];
-                    final limit = NumberFormat.decimalPattern('en_US')
-                        .format(row.item.limit);
-                    return ItemTile(
-                      item: row.item,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => DetailScreen(
-                              item: row.item,
-                              currentPrice:
-                                  _latestPrices[row.item.id.toString()],
-                              allItems: _items,
-                              latestPrices: _latestPrices,
+              : RefreshIndicator(
+                  onRefresh: () => _loadData(forceRefresh: true),
+                  color: AppTheme.accentColor,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: rows.length,
+                    itemBuilder: (context, index) {
+                      final row = rows[index];
+                      final limit = NumberFormat.decimalPattern('en_US')
+                          .format(row.item.limit);
+                      return ItemTile(
+                        item: row.item,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => DetailScreen(
+                                item: row.item,
+                                currentPrice:
+                                    _latestPrices[row.item.id.toString()],
+                                allItems: _items,
+                                latestPrices: _latestPrices,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      title: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              row.item.name,
+                          );
+                        },
+                        title: Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                row.item.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '+${PriceFormat.compactValue(row.limitPotential.round())}/4h',
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: AppTheme.accentColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Alch: ${PriceFormat.price(row.item.highAlch)}',
+                              style: const TextStyle(
+                                color: AppTheme.secondaryTextColor,
+                              ),
+                            ),
+                            Text(
+                              'Buy: ${PriceFormat.price(row.currentHigh)}',
+                              style: const TextStyle(
+                                color: AppTheme.secondaryTextColor,
+                              ),
+                            ),
+                            Text(
+                              'Profit: ${PriceFormat.price(row.profit.round())}',
+                              style: const TextStyle(
+                                color: Colors.greenAccent,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                          Text(
-                            '+${PriceFormat.compactValue(row.limitPotential.round())}/4h',
-                            style: const TextStyle(
-                              color: AppTheme.accentColor,
-                              fontWeight: FontWeight.w700,
+                            Text(
+                              'x$limit/4h',
+                              style: const TextStyle(
+                                color: AppTheme.secondaryTextColor,
+                                fontSize: 12,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Alch: ${PriceFormat.price(row.item.highAlch)}',
-                            style: const TextStyle(
-                              color: AppTheme.secondaryTextColor,
-                            ),
-                          ),
-                          Text(
-                            'Buy: ${PriceFormat.price(row.currentHigh)}',
-                            style: const TextStyle(
-                              color: AppTheme.secondaryTextColor,
-                            ),
-                          ),
-                          Text(
-                            'Profit: ${PriceFormat.price(row.profit.round())}',
-                            style: const TextStyle(
-                              color: Colors.greenAccent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            'x$limit/4h',
-                            style: const TextStyle(
-                              color: AppTheme.secondaryTextColor,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],
@@ -938,7 +943,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final buyLimitCaps = _buildBuyLimitCapRows();
 
-    return ListView(
+    final content = ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: <Widget>[
         _buildSectionHeader('Most traded (1h)'),
@@ -1130,6 +1136,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }),
       ],
     );
+
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      color: AppTheme.accentColor,
+      child: content,
+    );
   }
 
   Widget _buildSectionHeader(String title) {
@@ -1190,7 +1202,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           TextButton(
-            onPressed: _retryFromOffline,
+            onPressed: _refreshAll,
             style: TextButton.styleFrom(
               foregroundColor: Colors.amber,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1204,8 +1216,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Tries to go back online after showing cached data.
-  Future<void> _retryFromOffline() async {
+  /// Refreshes both the item list / latest prices and the hourly market data.
+  /// Used by the offline banner's Retry and by pull-to-refresh.
+  Future<void> _refreshAll() async {
     await Future.wait<void>(<Future<void>>[
       _loadData(forceRefresh: true),
       _loadMarketData(forceRefresh: true),
