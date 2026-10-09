@@ -107,6 +107,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedTab = 0;
   bool _isOffline = false;
 
+  // Memoized rankings. `IndexedStack` keeps every tab alive, so each build
+  // (including every search keystroke) would otherwise re-iterate and re-sort
+  // the full item list three times. The caches are keyed on the identity of
+  // the source objects, which are replaced wholesale whenever data reloads.
+  List<_MarketRow>? _marketRowsCache;
+  List<ItemMapping>? _marketRowsCacheItems;
+  Map<String, HourlyPriceData>? _marketRowsCacheHourly;
+
+  List<_BuyLimitCapRow>? _buyLimitCapRowsCache;
+  List<ItemMapping>? _buyLimitCapRowsCacheItems;
+  Map<String, ItemPrice>? _buyLimitCapRowsCachePrices;
+
+  List<AlchemyOpportunity>? _alchemyRowsCache;
+  List<ItemMapping>? _alchemyRowsCacheItems;
+  Map<String, ItemPrice>? _alchemyRowsCachePrices;
+  String? _alchemyRowsCacheFilter;
+
+  ItemMapping? _natureRune;
+  List<ItemMapping>? _natureRuneCacheItems;
+
   @override
   void initState() {
     super.initState();
@@ -352,15 +372,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  ItemMapping? _natureRuneFor() {
+    if (!identical(_natureRuneCacheItems, _items)) {
+      _natureRune = AlchemyProfit.findNatureRune(_items);
+      _natureRuneCacheItems = _items;
+    }
+    return _natureRune;
+  }
+
   double _alchemyProfitFor(ItemMapping item) {
     return AlchemyProfit.calculate(
       item: item,
       latestPrices: _latestPrices,
-      natureRune: AlchemyProfit.findNatureRune(_items),
+      natureRune: _natureRuneFor(),
     );
   }
 
   List<_MarketRow> _buildMarketRows() {
+    if (_marketRowsCache != null &&
+        identical(_marketRowsCacheItems, _items) &&
+        identical(_marketRowsCacheHourly, _hourlyData)) {
+      return _marketRowsCache!;
+    }
+
     final rows = <_MarketRow>[];
 
     for (final item in _items) {
@@ -395,12 +429,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     rows.sort((a, b) => b.totalVolume.compareTo(a.totalVolume));
+    _marketRowsCache = rows;
+    _marketRowsCacheItems = _items;
+    _marketRowsCacheHourly = _hourlyData;
     return rows;
   }
 
   List<_BuyLimitCapRow> _buildBuyLimitCapRows() {
+    if (_buyLimitCapRowsCache != null &&
+        identical(_buyLimitCapRowsCacheItems, _items) &&
+        identical(_buyLimitCapRowsCachePrices, _latestPrices)) {
+      return _buyLimitCapRowsCache!;
+    }
+
     final rows = <_BuyLimitCapRow>[];
-    final natureRune = AlchemyProfit.findNatureRune(_items);
+    final natureRune = _natureRuneFor();
 
     for (final item in _items) {
       final limit = item.limit;
@@ -450,20 +493,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     rows.sort((a, b) => b.limitCap.compareTo(a.limitCap));
-    return rows.take(15).toList();
+    final result = rows.take(15).toList();
+    _buyLimitCapRowsCache = result;
+    _buyLimitCapRowsCacheItems = _items;
+    _buyLimitCapRowsCachePrices = _latestPrices;
+    return result;
   }
 
   List<AlchemyOpportunity> _buildAlchemyRows() {
+    if (_alchemyRowsCache != null &&
+        identical(_alchemyRowsCacheItems, _items) &&
+        identical(_alchemyRowsCachePrices, _latestPrices) &&
+        _alchemyRowsCacheFilter == _selectedAlchMembershipFilter) {
+      return _alchemyRowsCache!;
+    }
+
     final members = switch (_selectedAlchMembershipFilter) {
       'F2P' => false,
       'Members' => true,
       _ => null,
     };
-    return AlchemyProfit.rankedItems(
+    final rows = AlchemyProfit.rankedItems(
       items: _items,
       latestPrices: _latestPrices,
       members: members,
     );
+    _alchemyRowsCache = rows;
+    _alchemyRowsCacheItems = _items;
+    _alchemyRowsCachePrices = _latestPrices;
+    _alchemyRowsCacheFilter = _selectedAlchMembershipFilter;
+    return rows;
   }
 
   @override
