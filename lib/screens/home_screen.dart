@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/item_price.dart';
 import '../screens/about_screen.dart';
+import '../screens/price_alerts_screen.dart';
 import '../services/osrs_api.dart';
+import '../services/price_alerts_background_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/alchemy_profit.dart';
 import '../utils/ge_tax.dart';
@@ -15,6 +17,7 @@ import '../widgets/item_tile.dart';
 import '../widgets/skeletons.dart';
 import '../widgets/updated_badge.dart';
 import 'detail_screen.dart';
+import 'limits_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.initialItems, this.initialLatestPrices});
@@ -66,8 +69,7 @@ class _DailyCapRow {
   final double flipCap;
 }
 
-class _HomeScreenState extends State<HomeScreen>
-  with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final OsrsApi _api = OsrsApi();
   final TextEditingController _searchController = TextEditingController();
   static const String _favoriteKey = 'favorite_item_ids';
@@ -157,35 +159,38 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     // wiki API asks for reasonable use; polling latest only, foreground only.
-    _autoRefreshTimer = Timer.periodic(
-      Duration(seconds: _autoRefreshSeconds),
-      (_) {
-        if (!mounted) {
-          return;
-        }
-        if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
-          return;
-        }
-        if (_selectedTab == 0 || _selectedTab == 1 || _selectedTab == 2) {
-          _loadData();
-        }
-      },
-    );
+    _autoRefreshTimer = Timer.periodic(Duration(seconds: _autoRefreshSeconds), (
+      _,
+    ) {
+      if (!mounted) {
+        return;
+      }
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      if (_selectedTab == 0 || _selectedTab == 1 || _selectedTab == 2) {
+        _loadData();
+      }
+    });
   }
 
   void _refreshVisibleTabIfNeeded() {
     final now = DateTime.now();
 
-    if ((_selectedTab == 1 || _selectedTab == 2) && (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl)) {
+    if ((_selectedTab == 1 || _selectedTab == 2) &&
+        (_latestCacheAt == null ||
+            now.difference(_latestCacheAt!) > _latestCacheTtl)) {
       _loadData();
       return;
     }
 
     if (_selectedTab == 0) {
-        if (_hourlyCacheAt == null || now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
+      if (_hourlyCacheAt == null ||
+          now.difference(_hourlyCacheAt!) > _hourlyCacheTtl) {
         _loadMarketData();
       }
-        if (_latestCacheAt == null || now.difference(_latestCacheAt!) > _latestCacheTtl) {
+      if (_latestCacheAt == null ||
+          now.difference(_latestCacheAt!) > _latestCacheTtl) {
         _loadData();
       }
     }
@@ -227,7 +232,8 @@ class _HomeScreenState extends State<HomeScreen>
 
       setState(() {
         _isLoading = false;
-        _errorMessage = 'No internet connection. Check your connection and retry.';
+        _errorMessage =
+            'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -264,7 +270,8 @@ class _HomeScreenState extends State<HomeScreen>
 
       setState(() {
         _marketLoading = false;
-        _marketError = 'No internet connection. Check your connection and retry.';
+        _marketError =
+            'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -319,12 +326,16 @@ class _HomeScreenState extends State<HomeScreen>
 
       final totalVolume = stat.highPriceVolume + stat.lowPriceVolume;
       final margin = stat.avgHighPrice - stat.avgLowPrice;
-        final pct = stat.avgLowPrice > 0 ? (margin / stat.avgLowPrice) * 100 : 0.0;
+      final pct = stat.avgLowPrice > 0
+          ? (margin / stat.avgLowPrice) * 100
+          : 0.0;
       final netMargin = GeTax.netMargin(
         high: stat.avgHighPrice,
         low: stat.avgLowPrice,
       );
-        final netMarginPct = stat.avgLowPrice > 0 ? (netMargin / stat.avgLowPrice) * 100 : 0.0;
+      final netMarginPct = stat.avgLowPrice > 0
+          ? (netMargin / stat.avgLowPrice) * 100
+          : 0.0;
 
       rows.add(
         _MarketRow(
@@ -370,7 +381,10 @@ class _HomeScreenState extends State<HomeScreen>
           : 0.0;
       final alchCap = alchProfit > 0 ? alchProfit * limit : 0.0;
       final flipCap = netMargin > 0 ? netMargin * limit : 0.0;
-      final dailyCap = [alchCap, flipCap].fold<double>(0, (acc, value) => value > acc ? value : acc);
+      final dailyCap = [
+        alchCap,
+        flipCap,
+      ].fold<double>(0, (acc, value) => value > acc ? value : acc);
 
       if (dailyCap <= 0) {
         continue;
@@ -469,28 +483,26 @@ class _HomeScreenState extends State<HomeScreen>
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: <String>['All', 'F2P', 'Members']
-                .map((filter) {
-                  final isSelected = _selectedMembershipFilter == filter;
-                  return ChoiceChip(
-                    label: Text(filter),
-                    selected: isSelected,
-                    onSelected: (_) {
-                      setState(() {
-                        _selectedMembershipFilter = filter;
-                        _applyFilters();
-                      });
-                    },
-                    selectedColor: AppTheme.accentColor,
-                    backgroundColor: AppTheme.panelColor,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.black : Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  );
-                })
-                .toList(),
+            children: <String>['All', 'F2P', 'Members'].map((filter) {
+              final isSelected = _selectedMembershipFilter == filter;
+              return ChoiceChip(
+                label: Text(filter),
+                selected: isSelected,
+                onSelected: (_) {
+                  setState(() {
+                    _selectedMembershipFilter = filter;
+                    _applyFilters();
+                  });
+                },
+                selectedColor: AppTheme.accentColor,
+                backgroundColor: AppTheme.panelColor,
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              );
+            }).toList(),
           ),
         ),
         const SizedBox(height: 12),
@@ -584,7 +596,9 @@ class _HomeScreenState extends State<HomeScreen>
                           )
                         : Text(
                             'High: ${PriceFormat.compact(price.high)}\nLow: ${PriceFormat.compact(price.low)}',
-                            style: const TextStyle(color: AppTheme.secondaryTextColor),
+                            style: const TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                            ),
                           ),
                   );
                 },
@@ -805,14 +819,15 @@ class _HomeScreenState extends State<HomeScreen>
 
     final rows = _buildMarketRows();
     final topVolume = rows.take(20).toList();
-    final bestMargins = rows
-        .where(
-          (row) =>
-              row.totalVolume >= _minimumMarketVolume &&
-              row.data.avgLowPrice >= _minimumAvgLow,
-        )
-        .toList()
-      ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
+    final bestMargins =
+        rows
+            .where(
+              (row) =>
+                  row.totalVolume >= _minimumMarketVolume &&
+                  row.data.avgLowPrice >= _minimumAvgLow,
+            )
+            .toList()
+          ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
 
     final dailyCaps = _buildDailyCapRows();
 
@@ -891,7 +906,10 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 if (alchemyProfit > 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
@@ -1069,6 +1087,37 @@ class _HomeScreenState extends State<HomeScreen>
                   : _latestCacheAt,
             ),
           ),
+          if (PriceAlertsBackgroundService.isAndroid)
+            IconButton(
+              onPressed: () {
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => PriceAlertsScreen(
+                      items: _items,
+                      latestPrices: _latestPrices,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.notifications_none),
+              tooltip: 'Active alerts',
+            ),
+          IconButton(
+            onPressed: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => LimitsScreen(
+                    allItems: _items,
+                    latestPrices: _latestPrices,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.shopping_cart_outlined),
+            tooltip: 'My limits',
+          ),
           PopupMenuButton<int>(
             icon: const Icon(Icons.timer_outlined),
             tooltip: 'Auto refresh',
@@ -1089,9 +1138,7 @@ class _HomeScreenState extends State<HomeScreen>
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const AboutScreen(),
-                ),
+                MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
               );
             },
             icon: const Icon(Icons.info_outline),
@@ -1099,10 +1146,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedTab,
-        children: currentTab,
-      ),
+      body: IndexedStack(index: _selectedTab, children: currentTab),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTab,
         onDestinationSelected: (int index) {

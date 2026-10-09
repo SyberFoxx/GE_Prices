@@ -54,4 +54,28 @@ void main() {
     await service.remove(inactiveAlert);
     expect(await service.load(), isEmpty);
   });
+
+  test('matches inclusive above and below target prices', () {
+    final base = PriceAlert(
+      itemId: 2,
+      itemName: 'Cannonball',
+      targetPrice: 1,
+      direction: 'above',
+      active: true,
+      createdAt: DateTime.utc(2026, 10, 9, 12),
+    );
+    final below = PriceAlert(
+      itemId: base.itemId,
+      itemName: base.itemName,
+      targetPrice: 5,
+      direction: 'below',
+      active: true,
+      createdAt: base.createdAt,
+    );
+
+    expect(base.isTriggeredBy(1), isTrue);
+    expect(base.isTriggeredBy(0), isFalse);
+    expect(below.isTriggeredBy(5), isTrue);
+    expect(below.isTriggeredBy(6), isFalse);
+  });
 }

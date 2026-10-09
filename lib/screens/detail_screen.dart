@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -10,14 +12,18 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/item_price.dart';
 import '../models/price_alert.dart';
+import '../models/limit_entry.dart';
 import '../services/alerts_service.dart';
 import '../services/osrs_api.dart';
+import '../services/price_alerts_background_service.dart';
+import '../services/limit_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/alchemy_profit.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/skeletons.dart';
 import '../widgets/updated_badge.dart';
+import 'limits_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({
@@ -45,6 +51,7 @@ class _DetailScreenState extends State<DetailScreen>
   static const Duration _timeseriesCacheTtl = Duration(minutes: 5);
 
   late SharedPreferences _prefs;
+  late LimitService _limitService;
   List<HistoricalPricePoint> _points = <HistoricalPricePoint>[];
   bool _isLoading = true;
   bool _isFavorite = false;
@@ -59,6 +66,8 @@ class _DetailScreenState extends State<DetailScreen>
   DateTime? _timeseriesCacheAt;
   String? _errorMessage;
   List<PriceAlert> _activeItemAlerts = <PriceAlert>[];
+  LimitEntry? _currentLimitEntry;
+  Timer? _countdownTimer;
 
   static const List<String> _timestepOptions = <String>[
     '5m',
@@ -71,9 +80,16 @@ class _DetailScreenState extends State<DetailScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initFavoriteState();
-    _loadItemAlerts();
+    _initServices();
     _loadData();
+  }
+
+  Future<void> _initServices() async {
+    _prefs = await SharedPreferences.getInstance();
+    _limitService = await LimitService.create();
+    await _initFavoriteState();
+    _loadItemAlerts();
+    _loadCurrentLimitEntry();
   }
 
   Future<void> _loadItemAlerts() async {
@@ -100,6 +116,9 @@ class _DetailScreenState extends State<DetailScreen>
       return;
     }
 
+    final canNotify =
+        await PriceAlertsBackgroundService.requestPermissionOnFirstAlert();
+
     final alert = PriceAlert(
       itemId: widget.item.id,
       itemName: widget.item.name,
@@ -121,7 +140,13 @@ class _DetailScreenState extends State<DetailScreen>
       Navigator.pop(sheetContext);
     }
     messenger.showSnackBar(
-      const SnackBar(content: Text('Price alert saved.')),
+      SnackBar(
+        content: Text(
+          canNotify
+              ? 'Price alert saved.'
+              : 'Alert saved, but notifications are disabled.',
+        ),
+      ),
     );
   }
 
@@ -235,8 +260,10 @@ class _DetailScreenState extends State<DetailScreen>
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
-                          onPressed: isSaving ||
-                                  (int.tryParse(targetController.text) ?? 0) <= 0
+                          onPressed:
+                              isSaving ||
+                                  (int.tryParse(targetController.text) ?? 0) <=
+                                      0
                               ? null
                               : () async {
                                   setSheetState(() {
@@ -281,7 +308,6 @@ class _DetailScreenState extends State<DetailScreen>
   }
 
   Future<void> _initFavoriteState() async {
-    _prefs = await SharedPreferences.getInstance();
     final favoriteIds = _prefs.getStringList(_favoriteKey) ?? <String>[];
 
     if (!mounted) {
@@ -293,6 +319,28 @@ class _DetailScreenState extends State<DetailScreen>
           .map(int.tryParse)
           .whereType<int>()
           .contains(widget.item.id);
+    });
+  }
+
+  void _loadCurrentLimitEntry() {
+    _currentLimitEntry = _limitService.getActiveEntry(widget.item.id);
+    if (mounted) {
+      setState(() {});
+    }
+    _startCountdownTimer();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_currentLimitEntry != null &&
+          _currentLimitEntry!.isExpired(LimitService.windowDuration)) {
+        _loadCurrentLimitEntry();
+        return;
+      }
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -310,6 +358,7 @@ class _DetailScreenState extends State<DetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
@@ -386,7 +435,8 @@ class _DetailScreenState extends State<DetailScreen>
 
       setState(() {
         _isLoading = false;
-        _errorMessage = 'No internet connection. Check your connection and retry.';
+        _errorMessage =
+            'No internet connection. Check your connection and retry.';
       });
     }
   }
@@ -625,6 +675,171 @@ class _DetailScreenState extends State<DetailScreen>
         );
       },
     );
+  }
+
+  /// Formats a Duration as "2h 13m" or "13m 45s".
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
+
+  /// Returns the color for the progress bar based on usage percentage.
+  Color _getProgressColor(double percentage) {
+    if (percentage >= 0.9) {
+      return Colors.redAccent;
+    } else if (percentage >= 0.7) {
+      return Colors.amber;
+    } else {
+      return Colors.green;
+    }
+  }
+
+  Widget _buildLimitProgress() {
+    final entry = _currentLimitEntry;
+    if (entry == null) return const SizedBox.shrink();
+
+    final remainingTime = entry.remainingTime(LimitService.windowDuration);
+    final percentage = entry.usedPercentage;
+    final progressColor = _getProgressColor(percentage);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.panelColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                '${NumberFormat.decimalPattern('en_US').format(entry.quantityBought)} of ${NumberFormat.decimalPattern('en_US').format(entry.limit)} bought',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${NumberFormat.decimalPattern('en_US').format(entry.remaining)} remaining',
+                style: const TextStyle(
+                  color: AppTheme.secondaryTextColor,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: percentage.clamp(0.0, 1.0),
+              minHeight: 8,
+              backgroundColor: const Color(0xFF3A3A3A),
+              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+            ),
+          ),
+          if (remainingTime != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.timer_outlined,
+                  size: 14,
+                  color: AppTheme.secondaryTextColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'resets in ${_formatDuration(remainingTime)}',
+                  style: const TextStyle(
+                    color: AppTheme.secondaryTextColor,
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _openLimitTrackerSheet,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    '+ Add',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.accentColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openLimitTrackerSheet() async {
+    final entry = _limitService.getActiveEntry(widget.item.id);
+    final quantityController = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            return _LimitTrackerSheet(
+              item: widget.item,
+              entry: entry,
+              quantityController: quantityController,
+              onAdd: (int quantity) async {
+                await _limitService.trackPurchase(
+                  itemId: widget.item.id,
+                  itemName: widget.item.name,
+                  quantity: quantity,
+                  currentLimit: widget.item.limit,
+                );
+                if (!mounted) return;
+                _loadCurrentLimitEntry();
+                if (sheetContext.mounted) {
+                  Navigator.pop(sheetContext);
+                }
+              },
+              onViewAllLimits: () {
+                if (sheetContext.mounted) {
+                  Navigator.pop(sheetContext);
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => LimitsScreen(
+                      allItems: widget.allItems,
+                      latestPrices: widget.latestPrices,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+    quantityController.dispose();
   }
 
   Widget _buildVolumeChart() {
@@ -1238,29 +1453,30 @@ class _DetailScreenState extends State<DetailScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
-          IconButton(
-            onPressed: _openPriceAlertSheet,
-            tooltip: 'Price alerts',
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                const Icon(Icons.notifications_none),
-                if (_activeItemAlerts.isNotEmpty)
-                  Positioned(
-                    top: -1,
-                    right: -1,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
+          if (PriceAlertsBackgroundService.isAndroid)
+            IconButton(
+              onPressed: _openPriceAlertSheet,
+              tooltip: 'Price alerts',
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  const Icon(Icons.notifications_none),
+                  if (_activeItemAlerts.isNotEmpty)
+                    Positioned(
+                      top: -1,
+                      right: -1,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
           IconButton(
             onPressed: _openWiki,
             icon: const Icon(Icons.open_in_new),
@@ -1325,12 +1541,40 @@ class _DetailScreenState extends State<DetailScreen>
                           ),
                           if (widget.item.limit > 0) ...<Widget>[
                             const SizedBox(height: 4),
-                            Text(
-                              'Buy limit: ${NumberFormat.decimalPattern('en_US').format(widget.item.limit)}',
-                              style: const TextStyle(
-                                color: AppTheme.secondaryTextColor,
-                              ),
+                            Row(
+                              children: <Widget>[
+                                Text(
+                                  'Buy limit: ${NumberFormat.decimalPattern('en_US').format(widget.item.limit)}',
+                                  style: const TextStyle(
+                                    color: AppTheme.secondaryTextColor,
+                                  ),
+                                ),
+                                const Spacer(),
+                                TextButton(
+                                  onPressed: _openLimitTrackerSheet,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Track my buys',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.accentColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (_currentLimitEntry != null) ...<Widget>[
+                              const SizedBox(height: 8),
+                              _buildLimitProgress(),
+                            ],
                           ],
                           if (widget.item.examine
                               .trim()
@@ -1551,6 +1795,207 @@ class _DetailScreenState extends State<DetailScreen>
                   _buildChart(),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet widget for tracking buy limit purchases.
+class _LimitTrackerSheet extends StatefulWidget {
+  const _LimitTrackerSheet({
+    required this.item,
+    required this.entry,
+    required this.quantityController,
+    required this.onAdd,
+    required this.onViewAllLimits,
+  });
+
+  final ItemMapping item;
+  final LimitEntry? entry;
+  final TextEditingController quantityController;
+  final void Function(int quantity) onAdd;
+  final VoidCallback onViewAllLimits;
+
+  @override
+  State<_LimitTrackerSheet> createState() => _LimitTrackerSheetState();
+}
+
+class _LimitTrackerSheetState extends State<_LimitTrackerSheet> {
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
+
+  Color _getProgressColor(double percentage) {
+    if (percentage >= 0.9) {
+      return Colors.redAccent;
+    } else if (percentage >= 0.7) {
+      return Colors.amber;
+    } else {
+      return Colors.green;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final remainingTime = entry?.remainingTime(LimitService.windowDuration);
+    final percentage = entry?.usedPercentage ?? 0.0;
+    final progressColor = _getProgressColor(percentage);
+    final quantity = int.tryParse(widget.quantityController.text) ?? 0;
+    final isValidQuantity = quantity > 0;
+
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Text(
+                    widget.item.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: widget.onViewAllLimits,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.accentColor,
+                    ),
+                    child: const Text('My limits'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (entry != null && remainingTime != null) ...<Widget>[
+                Text(
+                  '${NumberFormat.decimalPattern('en_US').format(entry.quantityBought)} of ${NumberFormat.decimalPattern('en_US').format(entry.limit)} bought',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${NumberFormat.decimalPattern('en_US').format(entry.remaining)} remaining',
+                  style: const TextStyle(
+                    color: AppTheme.secondaryTextColor,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: percentage.clamp(0.0, 1.0),
+                    minHeight: 10,
+                    backgroundColor: const Color(0xFF3A3A3A),
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.timer_outlined,
+                      size: 16,
+                      color: AppTheme.secondaryTextColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'resets in ${_formatDuration(remainingTime)}',
+                      style: const TextStyle(
+                        color: AppTheme.secondaryTextColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ] else ...<Widget>[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.panelColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.info_outline,
+                        color: AppTheme.accentColor,
+                        size: 20,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'No active window. Add your first purchase to start tracking.',
+                          style: TextStyle(
+                            color: AppTheme.secondaryTextColor,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+              TextField(
+                controller: widget.quantityController,
+                onChanged: (_) => setState(() {}),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: false,
+                ),
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Quantity bought',
+                  hintText: 'Enter amount',
+                  suffixText: 'max: ${NumberFormat.decimalPattern('en_US').format(entry?.remaining ?? widget.item.limit)}',
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: isValidQuantity
+                      ? () => widget.onAdd(quantity)
+                      : null,
+                  child: Text(entry != null ? 'Add to window' : 'Start tracking'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Center(
+                child: Text(
+                  'Window resets every 4 hours',
+                  style: TextStyle(
+                    color: AppTheme.secondaryTextColor,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

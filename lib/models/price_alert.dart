@@ -52,4 +52,10 @@ class PriceAlert {
     active: active ?? this.active,
     createdAt: createdAt,
   );
+
+  bool isTriggeredBy(int currentPrice) {
+    return direction == 'above'
+        ? currentPrice >= targetPrice
+        : currentPrice <= targetPrice;
+  }
 }
