@@ -1,10 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  /// App version from the platform (pubspec `version:`), e.g. "1.0.0".
+  /// Shows "—" until/unless the package plugin can report it.
+  String? _version;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _version = info.version;
+      });
+    } catch (_) {
+      // Plugin unavailable (e.g. widget tests): leave the "—" placeholder.
+    }
+  }
 
   Future<void> _openWiki() async {
     final url = Uri.parse('https://oldschool.runescape.wiki');
@@ -35,9 +65,9 @@ class AboutScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Version 1.0.0',
-              style: TextStyle(
+            Text(
+              'Version ${_version ?? '—'}',
+              style: const TextStyle(
                 color: AppTheme.secondaryTextColor,
                 fontSize: 16,
               ),

@@ -31,9 +31,13 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: AboutScreen()));
+    // Let the version lookup resolve. There is no package_info_plus platform
+    // implementation in tests, so the version falls back to the "—" placeholder
+    // (on a device it shows the real pubspec version).
+    await tester.pump();
 
     expect(find.text('GE Prices'), findsOneWidget);
-    expect(find.text('Version 1.0.0'), findsOneWidget);
+    expect(find.text('Version —'), findsOneWidget);
     expect(find.text('oldschool.runescape.wiki'), findsOneWidget);
   });
 }
