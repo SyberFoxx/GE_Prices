@@ -812,7 +812,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .where(
               (row) =>
                   row.totalVolume >= _minimumMarketVolume &&
-                  row.data.avgLowPrice >= _minimumAvgLow,
+                  row.data.avgLowPrice >= _minimumAvgLow &&
+                  // A "best margin" that loses money after GE tax is not a
+                  // margin worth showing.
+                  row.netMargin > 0,
             )
             .toList()
           ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
