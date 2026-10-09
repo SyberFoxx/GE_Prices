@@ -38,11 +38,11 @@ Legend: **P0** robustness / correctness, **P1** high-impact features,
 
 ## P1 — Features
 
-- [ ] **FT-1 — Volume alerts + favorite alerts.** Alert on unusual volume
+- [x] **FT-1 — Volume alerts + favorite alerts.** Alert on unusual volume
   (dump/pump) and allow a target on any favorite, not one item at a time.
 - [x] **FT-2 — Triggered-alert history.** Show active and fired alerts with
   timestamps.
-- [ ] **FT-3 — 24h % change + trend arrow** on list rows (the metric a flipper
+- [x] **FT-3 — 24h % change + trend arrow** on list rows (the metric a flipper
   actually reads).
 - [ ] **FT-4 — Sort / filter Market & Search by price, margin, volume and
   % change; search the item `examine` text and filter by category.**
