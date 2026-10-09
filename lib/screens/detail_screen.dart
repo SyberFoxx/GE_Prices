@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -180,9 +182,7 @@ class _DetailScreenState extends State<DetailScreen>
   }
 
   List<HistoricalPricePoint> get _validPoints => _points
-      .where(
-        (point) => point.avgHighPrice != null && point.avgLowPrice != null,
-      )
+      .where((point) => point.avgHighPrice != null && point.avgLowPrice != null)
       .toList();
 
   List<HistoricalPricePoint> get _displayPoints {
@@ -212,7 +212,9 @@ class _DetailScreenState extends State<DetailScreen>
     final minValue = values.reduce((a, b) => a < b ? a : b);
     final maxValue = values.reduce((a, b) => a > b ? a : b);
     final span = maxValue - minValue;
-    final padding = span > 0 ? span * 0.12 : (maxValue == 0 ? 10.0 : maxValue * 0.12);
+    final padding = span > 0
+        ? span * 0.12
+        : (maxValue == 0 ? 10.0 : maxValue * 0.12);
 
     return <String, double>{
       'min': minValue - padding,
@@ -246,6 +248,35 @@ class _DetailScreenState extends State<DetailScreen>
     return DateFormat('MMM d').format(date);
   }
 
+  double _chartAxisInterval(double minY, double maxY) {
+    return math.max(1, (maxY - minY) / 4);
+  }
+
+  String _formatChartAxisLabel(double value, double interval) {
+    final magnitude = value.abs();
+    if (magnitude < 1000) {
+      final decimals = interval >= 1 ? 0 : 1;
+      return value.toStringAsFixed(decimals);
+    }
+
+    final unit = magnitude >= 1000000000
+        ? 1000000000.0
+        : magnitude >= 1000000
+        ? 1000000.0
+        : 1000.0;
+    final suffix = unit == 1000000000
+        ? 'B'
+        : unit == 1000000
+        ? 'M'
+        : 'K';
+    final scaledInterval = interval / unit;
+    final decimals = scaledInterval >= 1
+        ? 0
+        : (-math.log(scaledInterval) / math.ln10).ceil().clamp(0, 3);
+    final label = (value / unit).toStringAsFixed(decimals);
+    return '$label$suffix';
+  }
+
   String _displayPrice(int? value) => PriceFormat.price(value);
 
   ItemMapping? _findNatureRune() {
@@ -262,7 +293,8 @@ class _DetailScreenState extends State<DetailScreen>
       return 0;
     }
 
-    final currentHigh = widget.currentPrice?.high ??
+    final currentHigh =
+        widget.currentPrice?.high ??
         widget.latestPrices[widget.item.id.toString()]?.high ??
         0;
     if (currentHigh <= 0) {
@@ -320,85 +352,90 @@ class _DetailScreenState extends State<DetailScreen>
       builder: (BuildContext modalContext) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Wrap(
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      const Text(
-                        'Escala del eje Y',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Wrap(
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        const Text(
+                          'Y-axis scale',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.pop(modalContext);
-                          setState(() {
-                            _autoYScale = true;
-                            _manualMin = 0;
-                            _manualMax = 0;
-                          });
-                        },
-                        icon: const Icon(Icons.refresh, color: AppTheme.accentColor),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  RangeSlider(
-                    min: range['min']!,
-                    max: range['max']!,
-                    values: values,
-                    labels: RangeLabels(
-                      '${values.start.round()} gp',
-                      '${values.end.round()} gp',
+                        const Spacer(),
+                        IconButton(
+                          onPressed: () {
+                            Navigator.pop(modalContext);
+                            setState(() {
+                              _autoYScale = true;
+                              _manualMin = 0;
+                              _manualMax = 0;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.refresh,
+                            color: AppTheme.accentColor,
+                          ),
+                        ),
+                      ],
                     ),
-                    onChanged: (RangeValues newValues) {
-                      setModalState(() {
-                        values = newValues;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: <Widget>[
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _autoYScale = true;
-                            _manualMin = 0;
-                            _manualMax = 0;
-                          });
-                          Navigator.pop(modalContext);
-                        },
-                        child: const Text('Auto'),
+                    const SizedBox(height: 8),
+                    RangeSlider(
+                      min: range['min']!,
+                      max: range['max']!,
+                      values: values,
+                      labels: RangeLabels(
+                        '${values.start.round()} gp',
+                        '${values.end.round()} gp',
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.accentColor,
+                      onChanged: (RangeValues newValues) {
+                        setModalState(() {
+                          values = newValues;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _autoYScale = true;
+                              _manualMin = 0;
+                              _manualMax = 0;
+                            });
+                            Navigator.pop(modalContext);
+                          },
+                          child: const Text('Auto'),
                         ),
-                        onPressed: () {
-                          Navigator.pop(modalContext);
-                          setState(() {
-                            _autoYScale = false;
-                            _manualMin = values.start;
-                            _manualMax = values.end;
-                          });
-                        },
-                        child: const Text(
-                          'Apply',
-                          style: TextStyle(color: Colors.black),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.accentColor,
+                          ),
+                          onPressed: () {
+                            Navigator.pop(modalContext);
+                            setState(() {
+                              _autoYScale = false;
+                              _manualMin = values.start;
+                              _manualMax = values.end;
+                            });
+                          },
+                          child: const Text(
+                            'Apply',
+                            style: TextStyle(color: Colors.black),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -410,7 +447,15 @@ class _DetailScreenState extends State<DetailScreen>
   Widget _buildVolumeChart() {
     final points = _displayPoints;
     if (points.isEmpty) {
-      return const SizedBox(height: 80);
+      return const SizedBox(
+        height: 80,
+        child: Center(
+          child: Text(
+            'No volume data',
+            style: TextStyle(color: AppTheme.secondaryTextColor),
+          ),
+        ),
+      );
     }
 
     final volumes = <double?>[];
@@ -421,9 +466,22 @@ class _DetailScreenState extends State<DetailScreen>
       volumes.add(spread > 0 ? spread.toDouble() : null);
     }
 
-    final maxVolume = volumes
-        .whereType<double>()
-        .fold<double>(0, (double acc, double value) => value > acc ? value : acc);
+    final maxVolume = volumes.whereType<double>().fold<double>(
+      0,
+      (double acc, double value) => value > acc ? value : acc,
+    );
+
+    if (maxVolume <= 0) {
+      return const SizedBox(
+        height: 80,
+        child: Center(
+          child: Text(
+            'No volume data',
+            style: TextStyle(color: AppTheme.secondaryTextColor),
+          ),
+        ),
+      );
+    }
 
     return SizedBox(
       height: 80,
@@ -566,7 +624,7 @@ class _DetailScreenState extends State<DetailScreen>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: (maxY - minY) / 4,
+            horizontalInterval: _chartAxisInterval(minY, maxY),
             getDrawingHorizontalLine: (_) =>
                 const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
           ),
@@ -576,10 +634,13 @@ class _DetailScreenState extends State<DetailScreen>
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 60,
-                interval: (maxY - minY) / 3,
+                interval: _chartAxisInterval(minY, maxY),
                 getTitlesWidget: (value, meta) {
                   return Text(
-                    NumberFormat.compact().format(value.toInt()),
+                    _formatChartAxisLabel(
+                      value,
+                      _chartAxisInterval(minY, maxY),
+                    ),
                     style: const TextStyle(
                       color: AppTheme.secondaryTextColor,
                       fontSize: 10,
@@ -714,10 +775,8 @@ class _DetailScreenState extends State<DetailScreen>
           ),
           spots: List.generate(
             points.length,
-            (index) => FlSpot(
-              index.toDouble(),
-              points[index].avgLowPrice!.toDouble(),
-            ),
+            (index) =>
+                FlSpot(index.toDouble(), points[index].avgLowPrice!.toDouble()),
           ),
         ),
       );
@@ -744,7 +803,7 @@ class _DetailScreenState extends State<DetailScreen>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: (maxY - minY) / 4,
+            horizontalInterval: _chartAxisInterval(minY, maxY),
             getDrawingHorizontalLine: (_) =>
                 const FlLine(color: Color(0xFF2A2A2A), strokeWidth: 1),
           ),
@@ -752,7 +811,9 @@ class _DetailScreenState extends State<DetailScreen>
           lineTouchData: LineTouchData(
             enabled: true,
             touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
-              if (response == null || response.lineBarSpots == null || response.lineBarSpots!.isEmpty) {
+              if (response == null ||
+                  response.lineBarSpots == null ||
+                  response.lineBarSpots!.isEmpty) {
                 if (selectedX != null) {
                   setState(() {
                     selectedX = null;
@@ -800,10 +861,13 @@ class _DetailScreenState extends State<DetailScreen>
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 60,
-                interval: (maxY - minY) / 3,
+                interval: _chartAxisInterval(minY, maxY),
                 getTitlesWidget: (value, meta) {
                   return Text(
-                    NumberFormat.compact().format(value.toInt()),
+                    _formatChartAxisLabel(
+                      value,
+                      _chartAxisInterval(minY, maxY),
+                    ),
                     style: const TextStyle(
                       color: AppTheme.secondaryTextColor,
                       fontSize: 10,
@@ -862,7 +926,9 @@ class _DetailScreenState extends State<DetailScreen>
       );
     }
 
-    final chart = _chartMode == 'Bars' ? _buildBarChart(points) : _buildLineChart(points);
+    final chart = _chartMode == 'Bars'
+        ? _buildBarChart(points)
+        : _buildLineChart(points);
 
     return Column(
       children: <Widget>[
@@ -881,13 +947,17 @@ class _DetailScreenState extends State<DetailScreen>
                 });
               },
               style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                  states,
+                ) {
                   if (states.contains(WidgetState.selected)) {
                     return AppTheme.accentColor;
                   }
                   return Colors.transparent;
                 }),
-                foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                foregroundColor: WidgetStateProperty.resolveWith<Color>((
+                  states,
+                ) {
                   if (states.contains(WidgetState.selected)) {
                     return Colors.black;
                   }
@@ -958,27 +1028,33 @@ class _DetailScreenState extends State<DetailScreen>
     final currentHigh = widget.currentPrice?.high;
     final currentLow = widget.currentPrice?.low;
     final grossMargin =
-        currentHigh != null && currentLow != null && currentHigh > 0 && currentLow > 0
-            ? currentHigh - currentLow
-            : null;
+        currentHigh != null &&
+            currentLow != null &&
+            currentHigh > 0 &&
+            currentLow > 0
+        ? currentHigh - currentLow
+        : null;
     final netMargin =
-        currentHigh != null && currentLow != null && currentHigh > 0 && currentLow > 0
-            ? GeTax.netMargin(high: currentHigh, low: currentLow)
-            : null;
+        currentHigh != null &&
+            currentLow != null &&
+            currentHigh > 0 &&
+            currentLow > 0
+        ? GeTax.netMargin(high: currentHigh, low: currentLow)
+        : null;
     final netMarginPct =
         currentLow != null && currentLow > 0 && netMargin != null
-            ? (netMargin / currentLow) * 100
-            : 0.0;
+        ? (netMargin / currentLow) * 100
+        : 0.0;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
-        title: Text(widget.item.name),
+        title: Text(
+          widget.item.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: UpdatedBadge(lastUpdated: _timeseriesCacheAt),
-          ),
           IconButton(
             onPressed: _openWiki,
             icon: const Icon(Icons.open_in_new),
@@ -1050,7 +1126,9 @@ class _DetailScreenState extends State<DetailScreen>
                               ),
                             ),
                           ],
-                          if (widget.item.examine.trim().isNotEmpty) ...<Widget>[
+                          if (widget.item.examine
+                              .trim()
+                              .isNotEmpty) ...<Widget>[
                             const SizedBox(height: 4),
                             Text(
                               widget.item.examine,
@@ -1100,13 +1178,17 @@ class _DetailScreenState extends State<DetailScreen>
                         const SizedBox(height: 8),
                         Text(
                           'High alch: ${PriceFormat.price(widget.item.highAlch)}',
-                          style: const TextStyle(color: AppTheme.secondaryTextColor),
+                          style: const TextStyle(
+                            color: AppTheme.secondaryTextColor,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Alch profit (est.): ${PriceFormat.price(_alchemyProfit().round())}',
                           style: TextStyle(
-                            color: _alchemyProfit() > 0 ? Colors.green : Colors.redAccent,
+                            color: _alchemyProfit() > 0
+                                ? Colors.green
+                                : Colors.redAccent,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1139,7 +1221,9 @@ class _DetailScreenState extends State<DetailScreen>
                         children: <Widget>[
                           const Text(
                             'Period change',
-                            style: TextStyle(color: AppTheme.secondaryTextColor),
+                            style: TextStyle(
+                              color: AppTheme.secondaryTextColor,
+                            ),
                           ),
                           Text(
                             '${percentageChange >= 0 ? '+' : ''}${percentageChange.toStringAsFixed(1)}%',
@@ -1162,7 +1246,9 @@ class _DetailScreenState extends State<DetailScreen>
                         Text(
                           'Net est.: ${PriceFormat.price(netMargin.round())} ${netMarginPct >= 0 ? '(+${netMarginPct.toStringAsFixed(1)}%)' : '(${netMarginPct.toStringAsFixed(1)}%)'}',
                           style: TextStyle(
-                            color: netMargin >= 0 ? Colors.green : Colors.redAccent,
+                            color: netMargin >= 0
+                                ? Colors.green
+                                : Colors.redAccent,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1184,6 +1270,7 @@ class _DetailScreenState extends State<DetailScreen>
                   children: <Widget>[
                     Expanded(
                       child: SegmentedButton<String>(
+                        showSelectedIcon: false,
                         segments: _timestepOptions
                             .map(
                               (value) => ButtonSegment<String>(
@@ -1204,22 +1291,24 @@ class _DetailScreenState extends State<DetailScreen>
                           _loadData();
                         },
                         style: ButtonStyle(
-                          backgroundColor: WidgetStateProperty.resolveWith<Color>((
-                            states,
-                          ) {
-                            if (states.contains(WidgetState.selected)) {
-                              return AppTheme.accentColor;
-                            }
-                            return Colors.transparent;
-                          }),
-                          foregroundColor: WidgetStateProperty.resolveWith<Color>((
-                            states,
-                          ) {
-                            if (states.contains(WidgetState.selected)) {
-                              return Colors.black;
-                            }
-                            return Colors.white;
-                          }),
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 6),
+                          ),
+                          backgroundColor:
+                              WidgetStateProperty.resolveWith<Color>((states) {
+                                if (states.contains(WidgetState.selected)) {
+                                  return AppTheme.accentColor;
+                                }
+                                return Colors.transparent;
+                              }),
+                          foregroundColor:
+                              WidgetStateProperty.resolveWith<Color>((states) {
+                                if (states.contains(WidgetState.selected)) {
+                                  return Colors.black;
+                                }
+                                return Colors.white;
+                              }),
                         ),
                       ),
                     ),
