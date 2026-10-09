@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../app_navigation.dart';
 import '../models/price_alert.dart';
 import '../services/alerts_service.dart';
 import 'osrs_api.dart';
@@ -43,12 +44,29 @@ class PriceAlertsBackgroundService {
   static bool get isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  static int? _pendingLaunchItemId;
+
   static Future<void> initialize() async {
     if (!isAndroid) {
       return;
     }
 
     await _ensureNotificationsInitialized();
+
+    // A tap can launch the app from terminated; remember the item to open once
+    // the navigator exists.
+    try {
+      final launchDetails = await _notifications
+          .getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp ?? false) {
+        _pendingLaunchItemId = int.tryParse(
+          launchDetails?.notificationResponse?.payload ?? '',
+        );
+      }
+    } catch (error) {
+      debugPrint('Could not read notification launch details: $error');
+    }
+
     await Workmanager().initialize(priceAlertCallbackDispatcher);
     // 15-min granularity, no instant push; instant push requires backend (planned Pro tier).
     await Workmanager().registerPeriodicTask(
@@ -57,6 +75,32 @@ class PriceAlertsBackgroundService {
       frequency: const Duration(minutes: 15),
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
+  }
+
+  /// Opens the item a notification launched the app for, if any. Retries until
+  /// the navigator is ready (the first frame may not have run yet).
+  static Future<void> openPendingLaunchItem() async {
+    final itemId = _pendingLaunchItemId;
+    if (itemId == null) {
+      return;
+    }
+    _pendingLaunchItemId = null;
+
+    for (var attempt = 0; attempt < 15; attempt++) {
+      if (appNavigatorKey.currentState != null) {
+        await openItemDetail(itemId);
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
+  static Future<void> _onNotificationTap(NotificationResponse response) async {
+    final itemId = int.tryParse(response.payload ?? '');
+    if (itemId == null) {
+      return;
+    }
+    await openItemDetail(itemId);
   }
 
   static Future<bool> requestPermissionOnFirstAlert() async {
@@ -105,7 +149,12 @@ class PriceAlertsBackgroundService {
       final latestPrices = await OsrsApi().fetchLatestPrices();
       for (final alert in alerts) {
         final itemPrice = latestPrices.data[alert.itemId.toString()];
-        final currentPrice = itemPrice?.high;
+        // "Below" targets watch the instant-sell price (low): using the
+        // instant-buy price (high) would only ever fire after the market had
+        // already moved past the target.
+        final currentPrice = alert.direction == 'above'
+            ? itemPrice?.high
+            : itemPrice?.low;
         if (currentPrice == null || !alert.isTriggeredBy(currentPrice)) {
           continue;
         }
@@ -116,6 +165,7 @@ class PriceAlertsBackgroundService {
             title:
                 '${alert.itemName} crossed ${_formatPrice(alert.targetPrice)} (now ${_formatPrice(currentPrice)})',
             body: 'Price target reached.',
+            payload: alert.itemId.toString(),
             notificationDetails: const NotificationDetails(
               android: AndroidNotificationDetails(
                 channelId,
@@ -128,7 +178,7 @@ class PriceAlertsBackgroundService {
               ),
             ),
           );
-          await alertsService.setActive(alert, false);
+          await alertsService.markTriggered(alert, DateTime.now());
         } catch (error) {
           debugPrint('Price alert notification failed: $error');
         }
@@ -156,6 +206,7 @@ class PriceAlertsBackgroundService {
       settings: const InitializationSettings(
         android: AndroidInitializationSettings(_notificationIcon),
       ),
+      onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
     final androidPlugin = _notifications

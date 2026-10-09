@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_navigation.dart';
 import 'screens/bootstrap_screen.dart';
 import 'services/price_alerts_background_service.dart';
 import 'theme/app_theme.dart';
@@ -18,6 +19,9 @@ void main() {
 Future<void> _initializePriceAlertsSafely() async {
   try {
     await PriceAlertsBackgroundService.initialize();
+    // A notification tap that launched the app opens its item once the
+    // navigator exists.
+    unawaited(PriceAlertsBackgroundService.openPendingLaunchItem());
   } catch (error) {
     debugPrint('Background price alerts unavailable: $error');
   }
@@ -31,6 +35,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'GE Prices',
       debugShowCheckedModeBanner: false,
+      navigatorKey: appNavigatorKey,
       theme: AppTheme.darkTheme,
       home: const BootstrapScreen(),
     );

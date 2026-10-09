@@ -6,6 +6,7 @@ class PriceAlert {
     required this.direction,
     required this.active,
     required this.createdAt,
+    this.triggeredAt,
   });
 
   final int itemId;
@@ -15,6 +16,12 @@ class PriceAlert {
   final bool active;
   final DateTime createdAt;
 
+  /// When the alert fired, or null while it has never triggered. A triggered
+  /// alert is deactivated but kept as history instead of silently disappearing.
+  final DateTime? triggeredAt;
+
+  bool get isTriggered => triggeredAt != null;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'itemId': itemId,
     'itemName': itemName,
@@ -22,6 +29,7 @@ class PriceAlert {
     'direction': direction,
     'active': active,
     'createdAt': createdAt.toIso8601String(),
+    'triggeredAt': triggeredAt?.toIso8601String(),
   };
 
   factory PriceAlert.fromJson(Map<String, dynamic> json) {
@@ -41,16 +49,19 @@ class PriceAlert {
       direction: direction as String,
       active: json['active'] as bool,
       createdAt: createdAt,
+      // Absent on alerts stored before history existed.
+      triggeredAt: DateTime.tryParse(json['triggeredAt'] as String? ?? ''),
     );
   }
 
-  PriceAlert copyWith({bool? active}) => PriceAlert(
+  PriceAlert copyWith({bool? active, DateTime? triggeredAt}) => PriceAlert(
     itemId: itemId,
     itemName: itemName,
     targetPrice: targetPrice,
     direction: direction,
     active: active ?? this.active,
     createdAt: createdAt,
+    triggeredAt: triggeredAt ?? this.triggeredAt,
   );
 
   bool isTriggeredBy(int currentPrice) {

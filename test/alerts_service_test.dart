@@ -20,6 +20,7 @@ void main() {
       direction: 'above',
       active: true,
       createdAt: createdAt,
+      triggeredAt: DateTime.utc(2026, 10, 9, 13),
     );
 
     await service.add(alert);
@@ -32,6 +33,7 @@ void main() {
     expect(loaded.single.direction, 'above');
     expect(loaded.single.active, isTrue);
     expect(loaded.single.createdAt, createdAt);
+    expect(loaded.single.triggeredAt, DateTime.utc(2026, 10, 9, 13));
   });
 
   test('returns active alerts and supports deactivate and remove', () async {
@@ -53,6 +55,28 @@ void main() {
 
     await service.remove(inactiveAlert);
     expect(await service.load(), isEmpty);
+  });
+
+  test('markTriggered deactivates and keeps the alert in history', () async {
+    final alert = PriceAlert(
+      itemId: 2,
+      itemName: 'Cannonball',
+      targetPrice: 1,
+      direction: 'above',
+      active: true,
+      createdAt: DateTime.utc(2026, 10, 9, 12),
+    );
+    await service.add(alert);
+
+    final firedAt = DateTime.utc(2026, 10, 9, 13);
+    await service.markTriggered(alert, firedAt);
+
+    expect(await service.active(), isEmpty);
+    final history = await service.triggered();
+    expect(history, hasLength(1));
+    expect(history.single.isTriggered, isTrue);
+    expect(history.single.triggeredAt, firedAt);
+    expect(history.single.active, isFalse);
   });
 
   test('matches inclusive above and below target prices', () {
