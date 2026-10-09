@@ -48,6 +48,26 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
         return;
       }
 
+      // Network failed: try the last good snapshot on disk before giving up,
+      // so the app opens with last-known prices instead of an empty error.
+      final cached = await _api.loadCachedStartup();
+      if (!mounted) {
+        return;
+      }
+
+      if (cached != null) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => HomeScreen(
+              initialItems: cached.items,
+              initialLatestPrices: cached.latest.data,
+              startedOffline: true,
+            ),
+          ),
+        );
+        return;
+      }
+
       setState(() {
         _error = describeFetchError(error);
       });

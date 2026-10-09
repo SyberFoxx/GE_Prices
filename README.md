@@ -8,7 +8,7 @@
   │  a chart). No Jagex assets, logos, or fonts.                              │
   └──────────────────────────────────────────────────────────────────────────┘
 -->
-<!-- <p align="center"><img src="docs/assets/banner.png" alt="GE Prices"/></p> -->
+<p align="center"><img src="docs/assets/banner.jpg" alt="GE Prices"/></p>
 
 <h1 align="center">GE Prices</h1>
 

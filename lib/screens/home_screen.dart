@@ -21,10 +21,19 @@ import 'detail_screen.dart';
 import 'limits_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.initialItems, this.initialLatestPrices});
+  const HomeScreen({
+    super.key,
+    this.initialItems,
+    this.initialLatestPrices,
+    this.startedOffline = false,
+  });
 
   final List<ItemMapping>? initialItems;
   final Map<String, ItemPrice>? initialLatestPrices;
+
+  /// True when BootstrapScreen opened with the on-disk cache because the
+  /// network was unavailable, so the UI shows an honest offline banner.
+  final bool startedOffline;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -96,11 +105,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _selectedMembershipFilter = 'All';
   String _selectedAlchMembershipFilter = 'All';
   int _selectedTab = 0;
+  bool _isOffline = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _isOffline = widget.startedOffline;
     _readAutoRefreshPreference();
     _loadFavorites();
     if (widget.initialItems != null && widget.initialLatestPrices != null) {
@@ -111,7 +122,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else {
       _loadData();
     }
-    _loadMarketData();
+    if (widget.startedOffline) {
+      // Avoid a 15s network timeout on a known-offline start: show the cached
+      // snapshot and let the banner's Retry go back online.
+      _loadCachedMarketData();
+    } else {
+      _loadMarketData();
+    }
   }
 
   Future<void> _readAutoRefreshPreference() async {
@@ -221,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _latestPrices = latest.data;
         _isLoading = false;
         _errorMessage = null;
+        _isOffline = false;
         _applyFilters();
       });
     } catch (error) {
@@ -230,16 +248,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _isLoading = false;
-        _errorMessage = describeFetchError(error).fullText;
+        if (_items.isEmpty) {
+          _errorMessage = describeFetchError(error).fullText;
+        } else {
+          // Keep whatever we already have (possibly a cached snapshot) and let
+          // the offline banner explain why it might be stale.
+          _isOffline = true;
+        }
       });
     }
   }
 
   Future<void> _loadMarketData({bool forceRefresh = false}) async {
-    setState(() {
-      _marketLoading = true;
-      _marketError = null;
-    });
+    if (_hourlyData.isEmpty) {
+      setState(() {
+        _marketLoading = true;
+        _marketError = null;
+      });
+    }
 
     try {
       final hourly = await _api.fetchHourly(forceRefresh: forceRefresh);
@@ -251,17 +277,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _hourlyData = hourly;
         _marketLoading = false;
+        _marketError = null;
+        _isOffline = false;
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
+      // Fall back to the cached 1h snapshot so the dashboard still renders.
+      final cached = await _api.loadCachedHourly();
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
+        if (cached != null && cached.isNotEmpty) {
+          _hourlyData = cached;
+        }
         _marketLoading = false;
-        _marketError = describeFetchError(error).fullText;
+        if (_hourlyData.isEmpty) {
+          _marketError = describeFetchError(error).fullText;
+        } else {
+          _isOffline = true;
+        }
       });
     }
+  }
+
+  /// Seeds the dashboard from the cached 1h snapshot without touching the
+  /// network (used on a known-offline start).
+  Future<void> _loadCachedMarketData() async {
+    final cached = await _api.loadCachedHourly();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      if (cached != null && cached.isNotEmpty) {
+        _hourlyData = cached;
+      }
+      _marketLoading = false;
+    });
   }
 
   void _applyFilters() {
@@ -1057,6 +1114,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Honest strip shown when the app is displaying cached/offline data.
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFF3A2E12),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.cloud_off_rounded, size: 16, color: Colors.amber),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Offline — showing the last saved prices.',
+              style: TextStyle(color: Colors.amber, fontSize: 12),
+            ),
+          ),
+          TextButton(
+            onPressed: _retryFromOffline,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.amber,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tries to go back online after showing cached data.
+  Future<void> _retryFromOffline() async {
+    await Future.wait<void>(<Future<void>>[
+      _loadData(forceRefresh: true),
+      _loadMarketData(forceRefresh: true),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentTab = <Widget>[
@@ -1137,7 +1233,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: IndexedStack(index: _selectedTab, children: currentTab),
+      body: Column(
+        children: <Widget>[
+          if (_isOffline) _buildOfflineBanner(),
+          Expanded(
+            child: IndexedStack(index: _selectedTab, children: currentTab),
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTab,
         onDestinationSelected: (int index) {

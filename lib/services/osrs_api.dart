@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/item_price.dart';
+import 'price_cache_store.dart';
 
 /// Thrown when the wiki API responds with a non-2xx status code.
 ///
@@ -88,6 +89,9 @@ class OsrsApi {
       <String, List<HistoricalPricePoint>>{};
   final Map<String, DateTime> _timeseriesCacheAt = <String, DateTime>{};
 
+  /// Last-good responses on disk, so the app can open offline.
+  final PriceCacheStore _diskCache = PriceCacheStore();
+
   bool _isCacheValid(DateTime? cacheAt) {
     if (cacheAt == null) return false;
     return DateTime.now().difference(cacheAt) < cacheTtl;
@@ -113,18 +117,12 @@ class OsrsApi {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! List) {
-      throw const FormatException('Mapping response is not a list.');
-    }
+    final mapping = _parseMapping(response.body);
 
-    final mapping = decoded
-        .map((item) => ItemMapping.fromJson(Map<String, dynamic>.from(item as Map)))
-        .toList();
-
-    // Update cache
+    // Update caches
     _mappingCache = mapping;
     _mappingCacheAt = DateTime.now();
+    await _diskCache.save('mapping', response.body);
 
     return mapping;
   }
@@ -143,16 +141,12 @@ class OsrsApi {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Latest response is not a map.');
-    }
+    final latest = _parseLatest(response.body);
 
-    final latest = LatestPriceResponse.fromJson(decoded);
-
-    // Update cache
+    // Update caches
     _latestCache = latest;
     _latestCacheAt = DateTime.now();
+    await _diskCache.save('latest', response.body);
 
     return latest;
   }
@@ -171,16 +165,12 @@ class OsrsApi {
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Hourly response is not a map.');
-    }
+    final hourlyData = _parseHourly(response.body);
 
-    final hourlyData = HourlyPriceResponse.fromJson(decoded).data;
-
-    // Update cache
+    // Update caches
     _hourlyCache = hourlyData;
     _hourlyCacheAt = DateTime.now();
+    await _diskCache.save('hourly', response.body);
 
     return hourlyData;
   }
@@ -227,6 +217,105 @@ class OsrsApi {
     _timeseriesCacheAt[cacheKey] = DateTime.now();
 
     return points;
+  }
+
+  /// Parses a `/mapping` body. Shared by live fetches and the disk cache.
+  List<ItemMapping> _parseMapping(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! List) {
+      throw const FormatException('Mapping response is not a list.');
+    }
+
+    return decoded
+        .map((item) => ItemMapping.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  /// Parses a `/latest` body. Shared by live fetches and the disk cache.
+  LatestPriceResponse _parseLatest(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Latest response is not a map.');
+    }
+
+    return LatestPriceResponse.fromJson(decoded);
+  }
+
+  /// Parses a `/1h` body. Shared by live fetches and the disk cache.
+  Map<String, HourlyPriceData> _parseHourly(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Hourly response is not a map.');
+    }
+
+    return HourlyPriceResponse.fromJson(decoded).data;
+  }
+
+  /// Loads the last cached `/mapping` snapshot from disk, or null if missing.
+  ///
+  /// On success the in-memory cache is seeded with the snapshot and its honest
+  /// capture time, so the "last updated" badge reflects the disk copy.
+  Future<List<ItemMapping>?> loadCachedMapping() async {
+    final cached = await _diskCache.load('mapping');
+    if (cached == null) {
+      return null;
+    }
+
+    try {
+      final mapping = _parseMapping(cached.body);
+      _mappingCache = mapping;
+      _mappingCacheAt = cached.savedAt;
+      return mapping;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads the last cached `/latest` snapshot from disk, or null if missing.
+  Future<LatestPriceResponse?> loadCachedLatest() async {
+    final cached = await _diskCache.load('latest');
+    if (cached == null) {
+      return null;
+    }
+
+    try {
+      final latest = _parseLatest(cached.body);
+      _latestCache = latest;
+      _latestCacheAt = cached.savedAt;
+      return latest;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads the last cached `/1h` snapshot from disk, or null if missing.
+  Future<Map<String, HourlyPriceData>?> loadCachedHourly() async {
+    final cached = await _diskCache.load('hourly');
+    if (cached == null) {
+      return null;
+    }
+
+    try {
+      final hourly = _parseHourly(cached.body);
+      _hourlyCache = hourly;
+      _hourlyCacheAt = cached.savedAt;
+      return hourly;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The two pieces BootstrapScreen needs to open offline: item mapping and
+  /// latest prices. Returns null when either snapshot is missing.
+  Future<({List<ItemMapping> items, LatestPriceResponse latest})?>
+  loadCachedStartup() async {
+    final items = await loadCachedMapping();
+    final latest = await loadCachedLatest();
+    if (items == null || latest == null) {
+      return null;
+    }
+
+    return (items: items, latest: latest);
   }
 
   /// GET with the required User-Agent, JSON accept header and a hard timeout.
