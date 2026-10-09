@@ -17,7 +17,10 @@ import '../widgets/updated_badge.dart';
 import 'detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.initialItems, this.initialLatestPrices});
+
+  final List<ItemMapping>? initialItems;
+  final Map<String, ItemPrice>? initialLatestPrices;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -98,7 +101,15 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _readAutoRefreshPreference();
     _loadFavorites();
-    _loadData();
+    if (widget.initialItems != null && widget.initialLatestPrices != null) {
+      _items = widget.initialItems!;
+      _latestPrices = widget.initialLatestPrices!;
+      _latestCacheAt = DateTime.now();
+      _isLoading = false;
+      _applyFilters();
+    } else {
+      _loadData();
+    }
     _loadMarketData();
   }
 
