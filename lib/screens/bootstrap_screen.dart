@@ -65,6 +65,8 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
     switch (kind) {
       case FetchErrorKind.network:
         return Icons.wifi_off_rounded;
+      case FetchErrorKind.timeout:
+        return Icons.timer_off_rounded;
       case FetchErrorKind.server:
         return Icons.cloud_off_rounded;
       case FetchErrorKind.format:

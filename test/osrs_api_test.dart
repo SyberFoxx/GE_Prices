@@ -17,4 +17,11 @@ void main() {
       expect(OsrsApi.lookbackFor(''), isNull);
     });
   });
+
+  group('OsrsApi request timeout', () {
+    test('bounds every request with a sane, non-zero timeout', () {
+      expect(OsrsApi.requestTimeout.inSeconds, greaterThan(0));
+      expect(OsrsApi.requestTimeout.inSeconds, lessThanOrEqualTo(60));
+    });
+  });
 }

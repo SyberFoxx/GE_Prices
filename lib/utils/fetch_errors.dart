@@ -7,7 +7,7 @@ import '../services/osrs_api.dart';
 
 /// Category of a data-fetch failure, so screens can show an honest message
 /// instead of blaming the connection for every failure.
-enum FetchErrorKind { network, server, format, unknown }
+enum FetchErrorKind { network, timeout, server, format, unknown }
 
 /// Human-readable description of a fetch failure.
 class FetchErrorInfo {
@@ -41,6 +41,14 @@ FetchErrorInfo describeFetchError(Object error) {
       kind: FetchErrorKind.network,
       title: 'No internet connection',
       hint: 'Check your connection and try again.',
+    );
+  }
+
+  if (actual is TimeoutException) {
+    return const FetchErrorInfo(
+      kind: FetchErrorKind.timeout,
+      title: 'The request timed out',
+      hint: 'The wiki is taking too long to respond. Try again.',
     );
   }
 

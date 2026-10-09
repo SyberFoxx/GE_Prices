@@ -22,6 +22,14 @@ void main() {
       expect(info.kind, FetchErrorKind.network);
     });
 
+    test('maps TimeoutException to timeout', () {
+      final info = describeFetchError(
+        TimeoutException('timed out', OsrsApi.requestTimeout),
+      );
+      expect(info.kind, FetchErrorKind.timeout);
+      expect(info.title, 'The request timed out');
+    });
+
     test('maps OsrsApiHttpException to server with the status code', () {
       final info = describeFetchError(const OsrsApiHttpException(500));
       expect(info.kind, FetchErrorKind.server);

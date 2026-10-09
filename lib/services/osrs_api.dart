@@ -68,6 +68,11 @@ class OsrsApi {
   /// Cache time-to-live shared by every endpoint.
   static const Duration cacheTtl = Duration(minutes: 5);
 
+  /// How long to wait for the Wiki before giving up. Without this, a stalled
+  /// connection leaves the app on a spinner forever (mobile networks drop
+  /// requests silently instead of erroring).
+  static const Duration requestTimeout = Duration(seconds: 15);
+
   // Cache storage: timestamp + response data
   List<ItemMapping>? _mappingCache;
   DateTime? _mappingCacheAt;
@@ -99,13 +104,7 @@ class OsrsApi {
       return _mappingCache!;
     }
 
-    final response = await http.get(
-      Uri.parse(_mappingUrl),
-      headers: {
-        'User-Agent': _userAgent,
-        'Accept': 'application/json',
-      },
-    );
+    final response = await _get(Uri.parse(_mappingUrl));
 
     if (response.statusCode != HttpStatus.ok) {
       throw OsrsApiHttpException(
@@ -135,13 +134,7 @@ class OsrsApi {
       return _latestCache!;
     }
 
-    final response = await http.get(
-      Uri.parse(_latestUrl),
-      headers: {
-        'User-Agent': _userAgent,
-        'Accept': 'application/json',
-      },
-    );
+    final response = await _get(Uri.parse(_latestUrl));
 
     if (response.statusCode != HttpStatus.ok) {
       throw OsrsApiHttpException(
@@ -169,13 +162,7 @@ class OsrsApi {
       return _hourlyCache!;
     }
 
-    final response = await http.get(
-      Uri.parse(_hourlyUrl),
-      headers: {
-        'User-Agent': _userAgent,
-        'Accept': 'application/json',
-      },
-    );
+    final response = await _get(Uri.parse(_hourlyUrl));
 
     if (response.statusCode != HttpStatus.ok) {
       throw OsrsApiHttpException(
@@ -217,14 +204,8 @@ class OsrsApi {
       return _timeseriesCache[cacheKey]!;
     }
 
-    final response = await http.get(
-      Uri.parse(
-        '$_timeSeriesUrl?id=${itemId.toString()}&lookback=$lookback',
-      ),
-      headers: {
-        'User-Agent': _userAgent,
-        'Accept': 'application/json',
-      },
+    final response = await _get(
+      Uri.parse('$_timeSeriesUrl?id=${itemId.toString()}&lookback=$lookback'),
     );
 
     if (response.statusCode != HttpStatus.ok) {
@@ -246,6 +227,23 @@ class OsrsApi {
     _timeseriesCacheAt[cacheKey] = DateTime.now();
 
     return points;
+  }
+
+  /// GET with the required User-Agent, JSON accept header and a hard timeout.
+  ///
+  /// Every Wiki endpoint needs the custom User-Agent, so it lives here instead
+  /// of being repeated per call, and every request is bounded by
+  /// [requestTimeout].
+  Future<http.Response> _get(Uri uri) {
+    return http
+        .get(
+          uri,
+          headers: const <String, String>{
+            'User-Agent': _userAgent,
+            'Accept': 'application/json',
+          },
+        )
+        .timeout(requestTimeout);
   }
 
   /// Invalidates all cached data.
