@@ -1,5 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Required for all network access (Wiki API). The debug/profile variants
+         get INTERNET from their own manifests for hot reload; release builds
+         need it declared here (no plugin provides it transitively). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Needed for local price alerts on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- flutter_local_notifications injects VIBRATE unconditionally; our
+         notifications are silent (no vibrationPattern), so drop it. -->
+    <uses-permission
+        android:name="android.permission.VIBRATE"
+        tools:node="remove" />
     <application
         android:label="GE Prices"
         android:name="${applicationName}"

@@ -1,4 +1,4 @@
-package com.minuevo.geprices.ge_prices
+package dev.syberfoxx.geprices
 
 import io.flutter.embedding.android.FlutterActivity
 
