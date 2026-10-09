@@ -20,14 +20,34 @@ class OsrsApi {
   factory OsrsApi() => _instance;
 
   static const String _mappingUrl =
-      'https://prices.runescape.wiki/api/v1/osrs/mapping';
+      'https://prices.runescape.wiki/api/v2/osrs/mapping';
   static const String _latestUrl =
-      'https://prices.runescape.wiki/api/v1/osrs/latest';
+      'https://prices.runescape.wiki/api/v2/osrs/latest';
   static const String _timeSeriesUrl =
-      'https://prices.runescape.wiki/api/v1/osrs/timeseries';
-  static const String _hourlyUrl = 'https://prices.runescape.wiki/api/v1/osrs/1h';
+      'https://prices.runescape.wiki/api/v2/osrs/timeseries';
+  static const String _hourlyUrl = 'https://prices.runescape.wiki/api/v2/osrs/1h';
   static const String _userAgent =
       'GEPrices/1.0 (Android; + https://github.com/SyberFoxx/OSRS_pricesEx)';
+
+  /// v2 `/timeseries` takes a `lookback` window instead of v1's `timestep`.
+  ///
+  /// These values were verified live against the v2 API: each lookback returns
+  /// bars whose width matches the UI label (6h -> 5m bars, 7d -> 1h bars, etc).
+  /// Beware: the docs say the returned `timestep` is set by the server and may
+  /// change without warning, so re-verify if the chart granularity ever looks
+  /// off. (lookback '6m' and '1y' both return 24h bars, so '1y' is used for the
+  /// daily view.)
+  static const Map<String, String> _timestepToLookback = <String, String>{
+    '5m': '6h',
+    '1h': '7d',
+    '6h': '30d',
+    '24h': '1y',
+  };
+
+  /// Resolves a UI timestep label to the v2 `lookback` value that the API
+  /// answers with bars of that width, or null if the label is unsupported.
+  static String? lookbackFor(String timestep) =>
+      _timestepToLookback[timestep.trim()];
 
   /// Cache time-to-live shared by every endpoint.
   static const Duration cacheTtl = Duration(minutes: 5);
@@ -164,10 +184,9 @@ class OsrsApi {
     required String timestep,
     bool forceRefresh = false,
   }) async {
-    const allowedTimesteps = <String>{'5m', '1h', '6h', '24h'};
     final normalizedTimestep = timestep.trim();
-
-    if (!allowedTimesteps.contains(normalizedTimestep)) {
+    final lookback = lookbackFor(normalizedTimestep);
+    if (lookback == null) {
       throw ArgumentError('Unsupported timestep: $timestep');
     }
 
@@ -181,7 +200,7 @@ class OsrsApi {
 
     final response = await http.get(
       Uri.parse(
-        '$_timeSeriesUrl?id=${itemId.toString()}&timestep=$normalizedTimestep',
+        '$_timeSeriesUrl?id=${itemId.toString()}&lookback=$lookback',
       ),
       headers: {
         'User-Agent': _userAgent,
