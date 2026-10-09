@@ -5,6 +5,22 @@ import 'package:http/http.dart' as http;
 
 import '../models/item_price.dart';
 
+/// Thrown when the wiki API responds with a non-2xx status code.
+///
+/// Kept separate from connectivity errors so screens (BootstrapScreen and the
+/// Market/Detail error states) can tell a server outage apart from a lack of
+/// internet or a response-schema change.
+class OsrsApiHttpException implements Exception {
+  const OsrsApiHttpException(this.statusCode, {this.reasonPhrase});
+
+  final int statusCode;
+  final String? reasonPhrase;
+
+  @override
+  String toString() => 'Wiki API error: $statusCode ${reasonPhrase ?? ''}'
+      .trim();
+}
+
 /// OSRS Wiki API client with in-memory cache.
 ///
 /// A single shared instance is used app-wide so the cache is truly shared
@@ -92,8 +108,9 @@ class OsrsApi {
     );
 
     if (response.statusCode != HttpStatus.ok) {
-      throw HttpException(
-        'Error fetching item mapping: ${response.statusCode} ${response.reasonPhrase}',
+      throw OsrsApiHttpException(
+        response.statusCode,
+        reasonPhrase: response.reasonPhrase,
       );
     }
 
@@ -127,8 +144,9 @@ class OsrsApi {
     );
 
     if (response.statusCode != HttpStatus.ok) {
-      throw HttpException(
-        'Error fetching latest prices: ${response.statusCode} ${response.reasonPhrase}',
+      throw OsrsApiHttpException(
+        response.statusCode,
+        reasonPhrase: response.reasonPhrase,
       );
     }
 
@@ -160,8 +178,9 @@ class OsrsApi {
     );
 
     if (response.statusCode != HttpStatus.ok) {
-      throw HttpException(
-        'Error fetching hourly market: ${response.statusCode} ${response.reasonPhrase}',
+      throw OsrsApiHttpException(
+        response.statusCode,
+        reasonPhrase: response.reasonPhrase,
       );
     }
 
@@ -209,8 +228,9 @@ class OsrsApi {
     );
 
     if (response.statusCode != HttpStatus.ok) {
-      throw HttpException(
-        'Error fetching historical prices: ${response.statusCode} ${response.reasonPhrase}',
+      throw OsrsApiHttpException(
+        response.statusCode,
+        reasonPhrase: response.reasonPhrase,
       );
     }
 

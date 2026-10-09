@@ -1,9 +1,10 @@
 // Smoke tests for GE Prices.
 //
 // The app has no dependency injection around networking, so these tests rely on
-// the default flutter_test HttpClient, which fails every request. That makes the
-// offline path deterministic and lets us assert the UI degrades gracefully
-// instead of crashing (see AGENTS.md, verification protocol step 4).
+// the default flutter_test HttpClient, which fails every request with HTTP 400.
+// That makes the bootstrap error path deterministic and lets us assert the UI
+// degrades gracefully instead of crashing (see AGENTS.md, verification
+// protocol step 4). A 400 is classified as a server error, not offline.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,17 +13,17 @@ import 'package:ge_prices/main.dart';
 import 'package:ge_prices/screens/about_screen.dart';
 
 void main() {
-  testWidgets('app boots and shows a dignified offline state', (
+  testWidgets('app boots and shows a dignified error state', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
 
-    // Let BootstrapScreen fire its requests and resolve to the offline error.
+    // Let BootstrapScreen fire its requests and resolve to the server error.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(tester.takeException(), isNull);
-    expect(find.text('No internet connection'), findsOneWidget);
+    expect(find.text('Server error (HTTP 400)'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
   });
 

@@ -11,6 +11,7 @@ import '../services/osrs_api.dart';
 import '../services/price_alerts_background_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/alchemy_profit.dart';
+import '../utils/fetch_errors.dart';
 import '../utils/ge_tax.dart';
 import '../utils/price_format.dart';
 import '../widgets/item_tile.dart';
@@ -229,8 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _isLoading = false;
-        _errorMessage =
-            'No internet connection. Check your connection and retry.';
+        _errorMessage = describeFetchError(error).fullText;
       });
     }
   }
@@ -259,8 +259,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _marketLoading = false;
-        _marketError =
-            'No internet connection. Check your connection and retry.';
+        _marketError = describeFetchError(error).fullText;
       });
     }
   }

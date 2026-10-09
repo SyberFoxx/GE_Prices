@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/osrs_api.dart';
 import '../theme/app_theme.dart';
+import '../utils/fetch_errors.dart';
 import '../widgets/skeletons.dart';
 import 'home_screen.dart';
 
@@ -14,7 +15,7 @@ class BootstrapScreen extends StatefulWidget {
 
 class _BootstrapScreenState extends State<BootstrapScreen> {
   final OsrsApi _api = OsrsApi();
-  String? _errorMessage;
+  FetchErrorInfo? _error;
 
   @override
   void initState() {
@@ -48,16 +49,29 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
       }
 
       setState(() {
-        _errorMessage = 'No internet connection';
+        _error = describeFetchError(error);
       });
     }
   }
 
   Future<void> _retry() async {
     setState(() {
-      _errorMessage = null;
+      _error = null;
     });
     await _loadStartupData();
+  }
+
+  IconData _errorIcon(FetchErrorKind kind) {
+    switch (kind) {
+      case FetchErrorKind.network:
+        return Icons.wifi_off_rounded;
+      case FetchErrorKind.server:
+        return Icons.cloud_off_rounded;
+      case FetchErrorKind.format:
+        return Icons.sync_problem_rounded;
+      case FetchErrorKind.unknown:
+        return Icons.error_outline_rounded;
+    }
   }
 
   @override
@@ -84,29 +98,32 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 24),
-                    if (_errorMessage == null) ...<Widget>[
+                    if (_error == null) ...<Widget>[
                       const ItemRowSkeleton(),
                       const ItemRowSkeleton(),
                       const ItemRowSkeleton(),
                     ] else ...<Widget>[
-                      const Icon(
-                        Icons.wifi_off_rounded,
+                      Icon(
+                        _errorIcon(_error!.kind),
                         color: AppTheme.secondaryTextColor,
                         size: 36,
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        _errorMessage!,
+                        _error!.title,
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Check your connection and try again.',
+                      Text(
+                        _error!.hint,
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: AppTheme.secondaryTextColor),
+                        style: const TextStyle(
+                          color: AppTheme.secondaryTextColor,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       FilledButton.icon(
