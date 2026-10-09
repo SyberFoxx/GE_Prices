@@ -5,13 +5,16 @@ class AlchemyOpportunity {
     required this.item,
     required this.currentHigh,
     required this.profit,
-    required this.dailyPotential,
+    required this.limitPotential,
   });
 
   final ItemMapping item;
   final int currentHigh;
   final double profit;
-  final double dailyPotential;
+
+  /// Profit if you buy the full 4h GE buy limit once (`profit * limit`).
+  /// This is a per-4h figure, not a daily one.
+  final double limitPotential;
 }
 
 class AlchemyProfit {
@@ -71,12 +74,12 @@ class AlchemyProfit {
           item: item,
           currentHigh: currentHigh,
           profit: profit,
-          dailyPotential: profit * item.limit,
+          limitPotential: profit * item.limit,
         ),
       );
     }
 
-    rows.sort((a, b) => b.dailyPotential.compareTo(a.dailyPotential));
+    rows.sort((a, b) => b.limitPotential.compareTo(a.limitPotential));
     return rows.take(50).toList();
   }
 }

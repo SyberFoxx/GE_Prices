@@ -78,7 +78,7 @@ void main() {
     },
   );
 
-  test('ranks opportunities by daily potential and filters membership', () {
+  test('ranks opportunities by 4h buy-limit potential and filters membership', () {
     const items = <ItemMapping>[natureRune, firstItem, secondItem];
 
     final ranked = AlchemyProfit.rankedItems(
@@ -86,8 +86,8 @@ void main() {
       latestPrices: prices,
     );
     expect(ranked.map((row) => row.item.id), <int>[2, 3]);
-    expect(ranked.first.dailyPotential, 1_890_000);
-    expect(ranked.last.dailyPotential, 495_000);
+    expect(ranked.first.limitPotential, 1_890_000);
+    expect(ranked.last.limitPotential, 495_000);
 
     final f2p = AlchemyProfit.rankedItems(
       items: items,

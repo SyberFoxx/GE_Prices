@@ -47,14 +47,14 @@ class _MarketRow {
   final double netMarginPct;
 }
 
-class _DailyCapRow {
-  const _DailyCapRow({
+class _BuyLimitCapRow {
+  const _BuyLimitCapRow({
     required this.item,
     required this.currentHigh,
     required this.currentLow,
     required this.alchProfit,
     required this.netMargin,
-    required this.dailyCap,
+    required this.limitCap,
     required this.alchCap,
     required this.flipCap,
   });
@@ -64,7 +64,10 @@ class _DailyCapRow {
   final int currentLow;
   final double alchProfit;
   final double netMargin;
-  final double dailyCap;
+
+  /// Best per-unit profit * buy limit, i.e. the most you could make from one
+  /// 4h buy-limit window (not a daily figure — the API gives no daily volume).
+  final double limitCap;
   final double alchCap;
   final double flipCap;
 }
@@ -339,8 +342,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return rows;
   }
 
-  List<_DailyCapRow> _buildDailyCapRows() {
-    final rows = <_DailyCapRow>[];
+  List<_BuyLimitCapRow> _buildBuyLimitCapRows() {
+    final rows = <_BuyLimitCapRow>[];
     final natureRune = AlchemyProfit.findNatureRune(_items);
 
     for (final item in _items) {
@@ -367,30 +370,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : 0.0;
       final alchCap = alchProfit > 0 ? alchProfit * limit : 0.0;
       final flipCap = netMargin > 0 ? netMargin * limit : 0.0;
-      final dailyCap = [
+      final limitCap = [
         alchCap,
         flipCap,
       ].fold<double>(0, (acc, value) => value > acc ? value : acc);
 
-      if (dailyCap <= 0) {
+      if (limitCap <= 0) {
         continue;
       }
 
       rows.add(
-        _DailyCapRow(
+        _BuyLimitCapRow(
           item: item,
           currentHigh: currentHigh,
           currentLow: currentLow,
           alchProfit: alchProfit,
           netMargin: netMargin,
-          dailyCap: dailyCap,
+          limitCap: limitCap,
           alchCap: alchCap,
           flipCap: flipCap,
         ),
       );
     }
 
-    rows.sort((a, b) => b.dailyCap.compareTo(a.dailyCap));
+    rows.sort((a, b) => b.limitCap.compareTo(a.limitCap));
     return rows.take(15).toList();
   }
 
@@ -699,7 +702,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           Text(
-                            '+${PriceFormat.compactValue(row.dailyPotential.round())}/day',
+                            '+${PriceFormat.compactValue(row.limitPotential.round())}/4h',
                             style: const TextStyle(
                               color: AppTheme.accentColor,
                               fontWeight: FontWeight.w700,
@@ -815,7 +818,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .toList()
           ..sort((a, b) => b.netMargin.compareTo(a.netMargin));
 
-    final dailyCaps = _buildDailyCapRows();
+    final buyLimitCaps = _buildBuyLimitCapRows();
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -930,17 +933,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
         }),
         _buildSectionHeaderWithTooltip(
-          'Daily caps (est.)',
-          'Max gp/day if you buy the full 4h GE limit. Estimates only.',
+          'Buy-limit caps (est.)',
+          'Max gp per 4h buy-limit window if you buy the full limit. Estimates only.',
         ),
-        ...dailyCaps.map((row) {
+        ...buyLimitCaps.map((row) {
           final formatter = NumberFormat.decimalPattern('en_US');
           final buyLimitText = 'x${formatter.format(row.item.limit)}/4h';
           final alchText = row.alchCap > 0
-              ? 'Alch: ${PriceFormat.price(row.alchCap.round())}/day'
+              ? 'Alch: ${PriceFormat.price(row.alchCap.round())}/4h'
               : null;
           final flipText = row.flipCap > 0
-              ? 'Flip: ${PriceFormat.price(row.flipCap.round())}/day'
+              ? 'Flip: ${PriceFormat.price(row.flipCap.round())}/4h'
               : null;
 
           return ItemTile(
