@@ -21,7 +21,7 @@ class AboutScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('About'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,6 +62,28 @@ class AboutScreen extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   decoration: TextDecoration.underline,
                 ),
+              ),
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Created using intellectual property belonging to Jagex Limited '
+              "under the terms of Jagex's Fan Content Policy. This content is "
+              'not endorsed by or affiliated with Jagex.',
+              style: TextStyle(
+                color: AppTheme.secondaryTextColor,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'RuneScape and Old School RuneScape are trademarks of Jagex Ltd. '
+              'Price and item data courtesy of the OSRS Wiki, licensed '
+              'CC BY-NC-SA 3.0.',
+              style: TextStyle(
+                color: AppTheme.secondaryTextColor,
+                fontSize: 13,
+                height: 1.5,
               ),
             ),
           ],
